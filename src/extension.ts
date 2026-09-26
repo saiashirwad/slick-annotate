@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto'
 import { load, save, type Annotation } from './session.ts'
 
 type Note = vscode.Comment & { id: string }
-type ThreadInfo = { id: string; snippet: string }
+
+// Proposed API `commentReveal`: the only way to put the cursor in a thread's reply box.
+type Revealable = vscode.CommentThread & {
+  reveal(comment?: vscode.Comment, options?: { focus?: number }): Thenable<void>
+}
+const focusReply = { focus: 1 } // CommentThreadFocus.Reply
 
 export function activate(context: vscode.ExtensionContext) {
   const folder = vscode.workspace.workspaceFolders?.[0]
@@ -13,17 +18,39 @@ export function activate(context: vscode.ExtensionContext) {
   const persist = () => save(root, session)
 
   const controller = vscode.comments.createCommentController('slick-annotate', 'Slick Annotate')
-  const threads = new Map<vscode.CommentThread, ThreadInfo>()
-
-  function openThread(uri: vscode.Uri, range: vscode.Range, info: ThreadInfo, notes: Note[]) {
-    const thread = controller.createCommentThread(uri, range, notes)
-    thread.canReply = true
-    threads.set(thread, info)
-    return thread
+  controller.options = { placeHolder: 'Annotate…' }
+  controller.commentingRangeProvider = {
+    provideCommentingRanges: (document) =>
+      document.uri.scheme === 'file'
+        ? [new vscode.Range(new vscode.Position(0, 0), document.lineAt(document.lineCount - 1).range.end)]
+        : [],
   }
 
+  // Threads with at least one saved annotation. Threads started from the gutter "+" are created by
+  // VS Code itself, so we only learn about them when their first annotation is saved.
+  const threads = new Set<vscode.CommentThread>()
+
+  for (const annotations of Map.groupBy(session.annotations, (a) => a.threadId).values()) {
+    const first = annotations[0]
+    const uri = vscode.Uri.joinPath(folder.uri, first.file)
+    const thread = controller.createCommentThread(uri, toRange(first.range), annotations.map(toNote))
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
+    threads.add(thread)
+  }
+
+  // Snaps a brand-new thread to whole lines, starts tracking it, and returns its snippet.
+  function begin(thread: vscode.CommentThread) {
+    const document = vscode.workspace.textDocuments.find((d) => d.uri.toString() === thread.uri.toString())
+    if (!document || !thread.range) return
+    thread.range = wholeLines(document, thread.range)
+    threads.add(thread)
+    return document.getText(thread.range)
+  }
+
+  const find = (note: Note) => session.annotations.find((a) => a.id === note.id)
+
   function threadOf(note: Note) {
-    for (const thread of threads.keys()) {
+    for (const thread of threads) {
       if (thread.comments.some((c) => (c as Note).id === note.id)) return thread
     }
   }
@@ -36,62 +63,53 @@ export function activate(context: vscode.ExtensionContext) {
     )
   }
 
-  function dispose(thread: vscode.CommentThread) {
-    threads.delete(thread)
-    thread.dispose()
-  }
-
-  for (const [threadId, annotations] of Map.groupBy(session.annotations, (a) => a.threadId)) {
-    const first = annotations[0]
-    const thread = openThread(
-      vscode.Uri.joinPath(folder.uri, first.file),
-      toRange(first.range),
-      { id: threadId, snippet: first.snippet },
-      annotations.map(toNote),
-    )
-    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
-  }
-
   context.subscriptions.push(
     controller,
 
-    vscode.commands.registerCommand('slick.annotateSelection', () => {
+    // Inside an existing annotation with nothing selected: add to its thread. Otherwise: start a new one.
+    vscode.commands.registerCommand('slick.annotateSelection', async () => {
       const editor = vscode.window.activeTextEditor
       if (!editor) return
       const { document, selection } = editor
-      const range = selection.isEmpty ? document.lineAt(selection.active.line).range : selection
-      const thread = openThread(document.uri, range, { id: randomUUID(), snippet: document.getText(range) }, [])
-      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded
+      const line = selection.active.line
+      const existing = selection.isEmpty
+        ? [...threads].find(
+            (t) =>
+              t.uri.toString() === document.uri.toString() &&
+              t.range &&
+              t.range.start.line <= line &&
+              line <= t.range.end.line,
+          )
+        : undefined
+      const thread = existing ?? controller.createCommentThread(document.uri, wholeLines(document, selection), [])
+      await (thread as Revealable).reveal(undefined, focusReply)
     }),
 
-    vscode.commands.registerCommand('slick.annotate', (reply: vscode.CommentReply) => {
-      const { thread, text } = reply
-      const info = threads.get(thread)
-      if (!info || !thread.range || !text.trim()) return
+    vscode.commands.registerCommand('slick.annotate', ({ thread, text }: vscode.CommentReply) => {
+      const previous = thread.comments[0] && find(thread.comments[0] as Note)
+      const snippet = previous?.snippet ?? begin(thread)
+      if (!thread.range || snippet === undefined || !text.trim()) return
       const annotation: Annotation = {
         id: randomUUID(),
-        threadId: info.id,
+        threadId: previous?.threadId ?? randomUUID(),
         file: vscode.workspace.asRelativePath(thread.uri, false),
         range: fromRange(thread.range),
-        snippet: info.snippet,
+        snippet,
         body: text,
         createdAt: new Date().toISOString(),
       }
       session.annotations.push(annotation)
       persist()
       thread.comments = [...thread.comments, toNote(annotation)]
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
+      // Collapsing hides the comment box but leaves focus in it; hand focus back to the code.
+      vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
     }),
 
-    vscode.commands.registerCommand('slick.discardThread', (thread: vscode.CommentThread) => {
-      if (thread.comments.length === 0) dispose(thread)
-    }),
-
-    vscode.commands.registerCommand('slick.editAnnotation', (note: Note) => {
-      setMode(note, vscode.CommentMode.Editing)
-    }),
+    vscode.commands.registerCommand('slick.editAnnotation', (note: Note) => setMode(note, vscode.CommentMode.Editing)),
 
     vscode.commands.registerCommand('slick.saveAnnotation', (note: Note) => {
-      const annotation = session.annotations.find((a) => a.id === note.id)
+      const annotation = find(note)
       const body = typeof note.body === 'string' ? note.body : note.body.value
       if (!annotation || !body.trim()) return
       annotation.body = body
@@ -99,10 +117,9 @@ export function activate(context: vscode.ExtensionContext) {
       setMode(note, vscode.CommentMode.Preview, body)
     }),
 
-    vscode.commands.registerCommand('slick.cancelEdit', (note: Note) => {
-      const annotation = session.annotations.find((a) => a.id === note.id)
-      setMode(note, vscode.CommentMode.Preview, annotation?.body)
-    }),
+    vscode.commands.registerCommand('slick.cancelEdit', (note: Note) =>
+      setMode(note, vscode.CommentMode.Preview, find(note)?.body),
+    ),
 
     vscode.commands.registerCommand('slick.deleteAnnotation', (note: Note) => {
       const thread = threadOf(note)
@@ -110,7 +127,10 @@ export function activate(context: vscode.ExtensionContext) {
       session.annotations = session.annotations.filter((a) => a.id !== note.id)
       persist()
       thread.comments = thread.comments.filter((c) => (c as Note).id !== note.id)
-      if (thread.comments.length === 0) dispose(thread)
+      if (thread.comments.length === 0) {
+        threads.delete(thread)
+        thread.dispose()
+      }
     }),
   )
 }
@@ -125,6 +145,12 @@ function toNote(annotation: Annotation): Note {
     author: { name: 'You' },
     timestamp: new Date(annotation.createdAt),
   }
+}
+
+// A selection ending at column 0 of a later line doesn't include that line.
+function wholeLines(document: vscode.TextDocument, { start, end }: vscode.Range) {
+  const last = end.character === 0 && end.line > start.line ? end.line - 1 : end.line
+  return new vscode.Range(start.line, 0, last, document.lineAt(last).range.end.character)
 }
 
 function fromRange({ start, end }: vscode.Range): Annotation['range'] {
