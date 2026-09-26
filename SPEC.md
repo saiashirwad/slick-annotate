@@ -28,7 +28,6 @@ Terms are defined in [CONTEXT.md](./CONTEXT.md).
 
 - `path/to/file.ts:40-52` for a range, or just `path/to/file.ts` for a whole file
 - the snippet, in a fenced code block (range annotations only)
-- the time it was written
 - the text
 
 Nothing else is added. You write the prompt around it when you paste.

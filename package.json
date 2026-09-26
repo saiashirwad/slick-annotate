@@ -23,6 +23,12 @@
         "category": "Slick"
       },
       {
+        "command": "slick.copySession",
+        "title": "Copy Session",
+        "category": "Slick",
+        "icon": "$(copy)"
+      },
+      {
         "command": "slick.annotate",
         "title": "Annotate"
       },
@@ -104,6 +110,13 @@
         {
           "command": "slick.cancelEdit",
           "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "slick.copySession",
+          "group": "navigation",
+          "when": "view == workbench.panel.comments"
         }
       ]
     }

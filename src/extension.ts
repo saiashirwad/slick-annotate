@@ -1,5 +1,6 @@
 import * as vscode from 'vscode'
 import { randomUUID } from 'node:crypto'
+import { format } from './copy.ts'
 import { load, save, type Annotation } from './session.ts'
 
 type Note = vscode.Comment & { id: string }
@@ -104,6 +105,13 @@ export function activate(context: vscode.ExtensionContext) {
       thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
       // Collapsing hides the comment box but leaves focus in it; hand focus back to the code.
       vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
+    }),
+
+    vscode.commands.registerCommand('slick.copySession', async () => {
+      const count = session.annotations.length
+      if (count === 0) return vscode.window.setStatusBarMessage('No annotations to copy', 2000)
+      await vscode.env.clipboard.writeText(format(session))
+      vscode.window.setStatusBarMessage(`Copied ${count} annotation${count === 1 ? '' : 's'}`, 2000)
     }),
 
     vscode.commands.registerCommand('slick.editAnnotation', (note: Note) => setMode(note, vscode.CommentMode.Editing)),
