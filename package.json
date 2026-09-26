@@ -8,14 +8,57 @@
   "main": "./src/extension.ts",
   "activationEvents": ["onStartupFinished"],
   "contributes": {
-    "commands": [{ "command": "slick.hello", "title": "Slick: Hello" }]
+    "commands": [
+      { "command": "slick.annotateSelection", "title": "Annotate Selection", "category": "Slick" },
+      { "command": "slick.annotate", "title": "Annotate" },
+      { "command": "slick.discardThread", "title": "Discard", "icon": "$(close)" },
+      { "command": "slick.editAnnotation", "title": "Edit", "icon": "$(edit)" },
+      { "command": "slick.deleteAnnotation", "title": "Delete", "icon": "$(trash)" },
+      { "command": "slick.saveAnnotation", "title": "Save" },
+      { "command": "slick.cancelEdit", "title": "Cancel" }
+    ],
+    "keybindings": [
+      {
+        "command": "slick.annotateSelection",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        { "command": "slick.annotateSelection", "group": "slick" }
+      ],
+      "comments/commentThread/context": [
+        { "command": "slick.annotate", "group": "inline", "when": "commentController == slick-annotate" }
+      ],
+      "comments/commentThread/title": [
+        { "command": "slick.discardThread", "group": "navigation", "when": "commentController == slick-annotate && commentThreadIsEmpty" }
+      ],
+      "comments/comment/title": [
+        { "command": "slick.editAnnotation", "group": "group@1", "when": "commentController == slick-annotate" },
+        { "command": "slick.deleteAnnotation", "group": "group@2", "when": "commentController == slick-annotate" }
+      ],
+      "comments/comment/context": [
+        { "command": "slick.cancelEdit", "group": "inline@1", "when": "commentController == slick-annotate" },
+        { "command": "slick.saveAnnotation", "group": "inline@2", "when": "commentController == slick-annotate" }
+      ],
+      "commandPalette": [
+        { "command": "slick.annotate", "when": "false" },
+        { "command": "slick.discardThread", "when": "false" },
+        { "command": "slick.editAnnotation", "when": "false" },
+        { "command": "slick.deleteAnnotation", "when": "false" },
+        { "command": "slick.saveAnnotation", "when": "false" },
+        { "command": "slick.cancelEdit", "when": "false" }
+      ]
+    }
   },
   "scripts": {
     "check": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/vscode": "^1.138.0",
     "@types/node": "^24",
+    "@types/vscode": "^1.138.0",
     "typescript": "^7.0.2"
   }
 }
