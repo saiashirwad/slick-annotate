@@ -23,4 +23,4 @@ Annotations are saved in `.slick/session.json`, which is kept out of git via `.g
    "enable-proposed-api": ["saiashirwad.slick-annotate"]
    ```
 
-There's no build step: VS Code runs the TypeScript directly. `npm install && npm run check` type-checks it.
+There's no build step: VS Code runs the TypeScript directly. `npm install && npm run check` type-checks and lints it.

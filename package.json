@@ -153,11 +153,14 @@
     }
   },
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit && oxlint src",
+    "lint": "oxlint src"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.85.0",
     "@types/node": "^24",
     "@types/vscode": "^1.138.0",
+    "oxlint": "1.85.0",
     "typescript": "^7.0.2"
   }
 }
