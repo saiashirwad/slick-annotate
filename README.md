@@ -4,10 +4,12 @@ Annotate code as you read it in VS Code, then copy every note at once, e.g. to p
 
 ## Use
 
-- **Alt+A** annotates the selected lines. Inside an existing annotation, it adds to that thread.
-- **Annotate File** (editor title bar, explorer menu) adds a note on the whole file.
-- **Slick: Copy Session** copies all annotations as Markdown, in the order you wrote them.
-- **Slick: Clear Session** deletes all annotations.
+| Command                   | Where                                   | Does                                                                   |
+| ------------------------- | --------------------------------------- | ---------------------------------------------------------------------- |
+| Slick: Annotate Selection | Alt+A, or the "+" in the margin         | Annotates the selected lines. Inside an annotation, adds to its thread |
+| Slick: Annotate File      | Editor title bar, explorer context menu | Adds a note on the whole file                                          |
+| Slick: Copy Session       | Command palette, Comments panel         | Copies every annotation as Markdown, in the order written              |
+| Slick: Clear Session      | Command palette, Comments panel         | Deletes every annotation                                               |
 
 Annotations are saved in `.slick/session.json`, which is kept out of git via `.git/info/exclude`.
 
