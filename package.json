@@ -23,6 +23,12 @@
         "category": "Slick"
       },
       {
+        "command": "slick.annotateFile",
+        "title": "Annotate File",
+        "category": "Slick",
+        "icon": "$(comment)"
+      },
+      {
         "command": "slick.copySession",
         "title": "Copy Session",
         "category": "Slick",
@@ -128,6 +134,20 @@
           "command": "slick.clearSession",
           "group": "navigation",
           "when": "view == workbench.panel.comments"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "slick.annotateFile",
+          "group": "navigation",
+          "when": "resourceScheme == file"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "slick.annotateFile",
+          "group": "slick",
+          "when": "!explorerResourceIsFolder"
         }
       ]
     }

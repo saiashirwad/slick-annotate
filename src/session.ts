@@ -3,12 +3,13 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, join, resolve } from 'node:path'
 
 export type Position = { line: number; character: number }
+export type Range = { start: Position; end: Position }
 
 export type Annotation = {
   id: string
   threadId: string
   file: string
-  range: { start: Position; end: Position }
+  range?: Range // absent for a whole-file annotation
   snippet: string
   body: string
   createdAt: string

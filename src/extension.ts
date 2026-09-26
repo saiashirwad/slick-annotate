@@ -1,7 +1,7 @@
 import * as vscode from 'vscode'
 import { randomUUID } from 'node:crypto'
 import { format } from './copy.ts'
-import { load, save, type Annotation } from './session.ts'
+import { load, save, type Annotation, type Range } from './session.ts'
 
 type Note = vscode.Comment & { id: string }
 
@@ -34,13 +34,24 @@ export function activate(context: vscode.ExtensionContext) {
   for (const annotations of Map.groupBy(session.annotations, (a) => a.threadId).values()) {
     const first = annotations[0]
     const uri = vscode.Uri.joinPath(folder.uri, first.file)
-    const thread = controller.createCommentThread(uri, toRange(first.range), annotations.map(toNote))
+    const thread = createThread(uri, first.range && toRange(first.range), annotations.map(toNote))
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
     threads.add(thread)
   }
 
+  // The API needs a range at creation; a thread without one belongs to the whole file.
+  function createThread(uri: vscode.Uri, range: vscode.Range | undefined, notes: Note[]) {
+    const thread = controller.createCommentThread(uri, range ?? new vscode.Range(0, 0, 0, 0), notes)
+    if (!range) thread.range = undefined
+    return thread
+  }
+
   // Snaps a brand-new thread to whole lines, starts tracking it, and returns its snippet.
   function begin(thread: vscode.CommentThread) {
+    if (!thread.range) {
+      threads.add(thread)
+      return ''
+    }
     const document = vscode.workspace.textDocuments.find((d) => d.uri.toString() === thread.uri.toString())
     if (!document || !thread.range) return
     thread.range = wholeLines(document, thread.range)
@@ -89,12 +100,12 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('slick.annotate', ({ thread, text }: vscode.CommentReply) => {
       const previous = thread.comments[0] && find(thread.comments[0] as Note)
       const snippet = previous?.snippet ?? begin(thread)
-      if (!thread.range || snippet === undefined || !text.trim()) return
+      if (snippet === undefined || !text.trim()) return
       const annotation: Annotation = {
         id: randomUUID(),
         threadId: previous?.threadId ?? randomUUID(),
         file: vscode.workspace.asRelativePath(thread.uri, false),
-        range: fromRange(thread.range),
+        range: thread.range && fromRange(thread.range),
         snippet,
         body: text,
         createdAt: new Date().toISOString(),
@@ -105,6 +116,15 @@ export function activate(context: vscode.ExtensionContext) {
       thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
       // Collapsing hides the comment box but leaves focus in it; hand focus back to the code.
       vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
+    }),
+
+    vscode.commands.registerCommand('slick.annotateFile', async (uri?: vscode.Uri) => {
+      uri ??= vscode.window.activeTextEditor?.document.uri
+      if (!uri) return
+      await vscode.window.showTextDocument(uri)
+      const existing = [...threads].find((t) => !t.range && t.uri.toString() === uri.toString())
+      const thread = existing ?? createThread(uri, undefined, [])
+      await (thread as Revealable).reveal(undefined, focusReply)
     }),
 
     vscode.commands.registerCommand('slick.copySession', async () => {
@@ -177,13 +197,13 @@ function wholeLines(document: vscode.TextDocument, { start, end }: vscode.Range)
   return new vscode.Range(start.line, 0, last, document.lineAt(last).range.end.character)
 }
 
-function fromRange({ start, end }: vscode.Range): Annotation['range'] {
+function fromRange({ start, end }: vscode.Range): Range {
   return {
     start: { line: start.line, character: start.character },
     end: { line: end.line, character: end.character },
   }
 }
 
-function toRange({ start, end }: Annotation['range']) {
+function toRange({ start, end }: Range) {
   return new vscode.Range(start.line, start.character, end.line, end.character)
 }
