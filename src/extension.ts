@@ -114,6 +114,22 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.setStatusBarMessage(`Copied ${count} annotation${count === 1 ? '' : 's'}`, 2000)
     }),
 
+    vscode.commands.registerCommand('slick.clearSession', async () => {
+      const count = session.annotations.length
+      if (count === 0) return vscode.window.setStatusBarMessage('No annotations to clear', 2000)
+      const clear = 'Clear'
+      const answer = await vscode.window.showWarningMessage(
+        `Delete all ${count} annotation${count === 1 ? '' : 's'}?`,
+        { modal: true },
+        clear,
+      )
+      if (answer !== clear) return
+      session.annotations = []
+      persist()
+      for (const thread of threads) thread.dispose()
+      threads.clear()
+    }),
+
     vscode.commands.registerCommand('slick.editAnnotation', (note: Note) => setMode(note, vscode.CommentMode.Editing)),
 
     vscode.commands.registerCommand('slick.saveAnnotation', (note: Note) => {

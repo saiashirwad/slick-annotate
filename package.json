@@ -29,6 +29,12 @@
         "icon": "$(copy)"
       },
       {
+        "command": "slick.clearSession",
+        "title": "Clear Session",
+        "category": "Slick",
+        "icon": "$(clear-all)"
+      },
+      {
         "command": "slick.annotate",
         "title": "Annotate"
       },
@@ -115,6 +121,11 @@
       "view/title": [
         {
           "command": "slick.copySession",
+          "group": "navigation",
+          "when": "view == workbench.panel.comments"
+        },
+        {
+          "command": "slick.clearSession",
           "group": "navigation",
           "when": "view == workbench.panel.comments"
         }
