@@ -45,6 +45,7 @@ Nothing else is added. You write the prompt around it when you paste.
 
 - Built on VS Code's Comments API (`vscode.comments.createCommentController`). This provides the inline comment boxes, the threads and the Comments panel.
 - Whole-file annotations: the stable API (`@types/vscode` 1.138) supports threads with no range. Setting `thread.range = undefined` attaches the thread to the file. `createCommentThread` still requires a range when it is called, so create the thread first, then clear its range.
+- No build step: `main` points at `src/extension.ts` and VS Code's bundled Node (24.x) strips types at load. TypeScript 7 is used only to type-check (`tsc --noEmit`, with `erasableSyntaxOnly` and `.ts` import extensions). No runtime dependencies.
 - `.slick/session.json` is the only source of truth. Threads are rebuilt from it when the workspace opens.
 
 ## Later
