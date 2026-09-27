@@ -2,6 +2,7 @@ import * as vscode from 'vscode'
 import { randomUUID } from 'node:crypto'
 import { format } from './copy.ts'
 import { load, save, type Annotation, type Range } from './session.ts'
+import { activateTour } from './tour.ts'
 
 // The comment shown for each annotation. VS Code passes these same objects back to comment commands.
 const annotationOf = new WeakMap<vscode.Comment, Annotation>()
@@ -13,6 +14,7 @@ export function activate(context: vscode.ExtensionContext) {
   const folder = vscode.workspace.workspaceFolders?.[0]
 
   if (!folder) return
+  activateTour(context, folder)
   const root = folder.uri.fsPath
   const session = load(root)
   const persist = () => save(root, session)

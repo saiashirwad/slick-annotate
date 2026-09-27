@@ -1,0 +1,227 @@
+/* The tour document in the sidebar. Every colour comes from the VS Code theme. */
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  padding: 8px 12px 40vh;
+  font: 14px/1.75 var(--vscode-font-family);
+  color: var(--vscode-editor-foreground);
+}
+
+/* Steps: only the current one is open. Others collapse by height, not display, so diagrams can still be measured. */
+
+section {
+  margin: 0 -8px 10px;
+  padding: 12px 14px 14px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+section:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+section.current {
+  border-color: color-mix(in srgb, var(--vscode-focusBorder) 70%, transparent);
+  background: none;
+  cursor: default;
+}
+
+section:not(.current) {
+  padding-bottom: 8px;
+}
+
+section:not(.current) h2 {
+  margin-bottom: 0;
+}
+
+section:not(.current) .body {
+  height: 0;
+  overflow: hidden;
+}
+
+.meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.number {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+}
+
+section.current .number {
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+}
+
+.file {
+  font-family: var(--vscode-editor-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* The step's Markdown, kept to a comfortable line length however wide the sidebar gets. */
+
+.body {
+  max-width: 68ch;
+}
+
+.body > :last-child {
+  margin-bottom: 0;
+}
+
+h2 {
+  margin: 4px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+h3,
+h4 {
+  margin: 10px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+p,
+ul,
+ol,
+table {
+  margin: 0 0 12px;
+}
+
+ul,
+ol {
+  padding-left: 20px;
+}
+
+li + li {
+  margin-top: 4px;
+}
+
+strong {
+  font-weight: 600;
+}
+
+a {
+  color: var(--vscode-textLink-foreground);
+}
+
+blockquote {
+  margin: 0 0 12px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--vscode-textLink-foreground) 30%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-textLink-foreground) 8%, transparent);
+}
+
+blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* Inline code: near body size, an accent between the link colour and the text, on a tint of the same hue. */
+code {
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.93em;
+  line-height: 1;
+  color: color-mix(in srgb, var(--vscode-textLink-foreground) 65%, var(--vscode-editor-foreground));
+  background: color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent);
+  -webkit-box-decoration-break: clone;
+}
+
+pre {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  background: var(--vscode-textCodeBlock-background);
+}
+
+pre code {
+  padding: 0;
+  color: inherit;
+  background: none;
+}
+
+table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 15%, transparent);
+  text-align: left;
+}
+
+th {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent);
+}
+
+tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
+}
+
+.mermaid {
+  margin: 4px 0 12px;
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Syntax colours for fenced code, borrowed from the theme's symbol colours. */
+
+.hljs-keyword,
+.hljs-built_in {
+  color: var(--vscode-symbolIcon-keywordForeground);
+}
+
+.hljs-string {
+  color: var(--vscode-debugTokenExpression-string);
+}
+
+.hljs-number,
+.hljs-literal {
+  color: var(--vscode-debugTokenExpression-number);
+}
+
+.hljs-comment {
+  font-style: italic;
+  color: var(--vscode-descriptionForeground);
+}
+
+.hljs-title,
+.hljs-function {
+  color: var(--vscode-symbolIcon-functionForeground);
+}
+
+.hljs-type,
+.hljs-class {
+  color: var(--vscode-symbolIcon-classForeground);
+}

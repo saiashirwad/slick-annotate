@@ -16,6 +16,24 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "slick-tour",
+          "title": "Tour",
+          "icon": "$(map)"
+        }
+      ]
+    },
+    "views": {
+      "slick-tour": [
+        {
+          "type": "webview",
+          "id": "slick.tour",
+          "name": "Tour"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "slick.annotateSelection",
@@ -61,6 +79,34 @@
       {
         "command": "slick.cancelEdit",
         "title": "Cancel"
+      },
+      {
+        "command": "slick.tourNext",
+        "title": "Next Step",
+        "category": "Slick",
+        "icon": "$(arrow-right)",
+        "enablement": "slick.tourActive"
+      },
+      {
+        "command": "slick.tourPrevious",
+        "title": "Previous Step",
+        "category": "Slick",
+        "icon": "$(arrow-left)",
+        "enablement": "slick.tourActive"
+      },
+      {
+        "command": "slick.tourCurrent",
+        "title": "Go to Current Step",
+        "category": "Slick",
+        "icon": "$(location)",
+        "enablement": "slick.tourActive"
+      },
+      {
+        "command": "slick.tourEnd",
+        "title": "End Tour",
+        "category": "Slick",
+        "icon": "$(close)",
+        "enablement": "slick.tourActive"
       }
     ],
     "keybindings": [
@@ -68,6 +114,16 @@
         "command": "slick.annotateSelection",
         "key": "alt+a",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "slick.tourNext",
+        "key": "alt+]",
+        "when": "slick.tourActive"
+      },
+      {
+        "command": "slick.tourPrevious",
+        "key": "alt+[",
+        "when": "slick.tourActive"
       }
     ],
     "menus": {
@@ -134,6 +190,26 @@
           "command": "slick.clearSession",
           "group": "navigation",
           "when": "view == workbench.panel.comments"
+        },
+        {
+          "command": "slick.tourPrevious",
+          "group": "navigation@1",
+          "when": "view == slick.tour && slick.tourActive"
+        },
+        {
+          "command": "slick.tourNext",
+          "group": "navigation@2",
+          "when": "view == slick.tour && slick.tourActive"
+        },
+        {
+          "command": "slick.tourCurrent",
+          "group": "navigation@3",
+          "when": "view == slick.tour && slick.tourActive"
+        },
+        {
+          "command": "slick.tourEnd",
+          "group": "navigation@4",
+          "when": "view == slick.tour && slick.tourActive"
         }
       ],
       "editor/title": [
@@ -162,5 +238,8 @@
     "@types/vscode": "^1.138.0",
     "oxlint": "1.85.0",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "mermaid": "^11.17.2"
   }
 }
