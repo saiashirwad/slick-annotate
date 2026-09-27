@@ -104,11 +104,7 @@ section.current .number {
   color: var(--vscode-descriptionForeground);
 }
 
-/* The step's Markdown, kept to a comfortable line length however wide the sidebar gets. */
-
-.body {
-  max-width: 68ch;
-}
+/* The step's Markdown. */
 
 .body > :last-child {
   margin-bottom: 0;
