@@ -54,7 +54,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   }
 
   // Every step's card, rendered by VS Code's own Markdown engine as soon as the tour loads, so moving is instant.
-  let pages: Promise<string>[] = []
+  let pages: Promise<(webview: vscode.Webview) => string>[] = []
   // Heights the cards measured themselves at, by step, so a revisited card opens at exactly the right size.
   let heights: number[] = []
 
@@ -62,17 +62,21 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     const meta = `Step ${index + 1} of ${tour!.steps.length}`
 
     return Promise.resolve(vscode.commands.executeCommand<string>('markdown.api.render', `# ${step.title}\n\n${step.body}`))
-      .then((body) => page(meta, body))
+      .then((body) => (webview: vscode.Webview) => page(meta, body, webview, context.extensionUri))
   }
 
   // Opens at an estimated height; the webview measures itself and the panel is rebuilt only if the text overflows.
-  function showCard(editor: vscode.TextEditor, line: number, html: string, step: Step) {
+  function showCard(editor: vscode.TextEditor, line: number, html: (webview: vscode.Webview) => string, step: Step) {
     card?.dispose()
     const index = current
 
     const open = (height: number) => {
-      const inset = vscode.window.createWebviewTextEditorInset(editor, line, height, { enableScripts: true })
-      inset.webview.html = html
+      const inset = vscode.window.createWebviewTextEditorInset(editor, line, height, {
+        enableScripts: true,
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'mermaid', 'dist')],
+      })
+
+      inset.webview.html = html(inset.webview)
 
       inset.webview.onDidReceiveMessage((pixels: number) => {
         const fitted = Math.ceil(pixels / lineHeight())
@@ -212,8 +216,12 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
 // Card height in editor lines, from the same metrics as the CSS below: roughly 80 characters per text line.
 function estimate(step: Step) {
-  const lines = step.body.split(/\n\s*\n/).reduce((sum, paragraph) => sum + Math.ceil(paragraph.length / 80), 0)
-  const pixels = 12 + 20 + 30 + lines * 22.4 + 8 * step.body.split(/\n\s*\n/).length + 22
+  // A diagram is guessed at 280px; everything else by paragraph length at roughly 90 characters per line.
+  const diagrams = step.body.match(/```mermaid[\s\S]*?```/g) ?? []
+  const text = step.body.replace(/```mermaid[\s\S]*?```/g, '')
+  const paragraphs = text.split(/\n\s*\n/)
+  const lines = paragraphs.reduce((sum, paragraph) => sum + paragraph.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 90)), 0), 0)
+  const pixels = 12 + 20 + 30 + lines * 22.4 + 8 * paragraphs.length + 22 + diagrams.length * 280
 
   // One spare line, so an estimate that falls a little short doesn't force a rebuild.
   return Math.ceil(pixels / lineHeight()) + 1
@@ -230,27 +238,58 @@ function lineHeight() {
   return height < 8 ? fontSize * height : height
 }
 
-function page(meta: string, body: string) {
+// Mermaid is only loaded into cards that have a diagram; the card reports its height once diagrams have drawn.
+function page(meta: string, body: string, webview: vscode.Webview, root: vscode.Uri) {
   const nonce = randomUUID().replaceAll('-', '')
+  const diagrams = body.includes('language-mermaid')
+  const mermaid = webview.asWebviewUri(vscode.Uri.joinPath(root, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js'))
 
   return `<!doctype html>
 <html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
   html, body { margin: 0; background: transparent; }
   body { padding: 4px 0 8px; font: 14px/1.6 var(--vscode-font-family); color: var(--vscode-editor-foreground); }
-  .card { max-width: 72ch; padding: 10px 16px 12px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35))); border-radius: 6px; background: var(--vscode-editorWidget-background); }
+  .card { max-width: 80ch; padding: 10px 16px 12px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35))); border-radius: 6px; background: var(--vscode-editorWidget-background); }
   .card { animation: in 180ms ease-out both; }
   @keyframes in { from { opacity: 0; } }
   .meta { font-size: 12px; opacity: 0.6; }
   h1 { margin: 2px 0 6px; font-size: 16px; font-weight: 600; }
-  p, ul, ol { margin: 0 0 8px; } .card > :last-child { margin-bottom: 0; }
+  h2, h3, h4 { margin: 10px 0 4px; font-size: 14px; font-weight: 600; }
+  p, ul, ol, table { margin: 0 0 8px; } .card > :last-child { margin-bottom: 0; }
+  ul, ol { padding-left: 20px; }
   code { font: 0.9em var(--vscode-editor-font-family); padding: 1px 4px; border-radius: 3px; background: var(--vscode-textCodeBlock-background); }
   pre { margin: 0 0 8px; padding: 8px 12px; border-radius: 4px; overflow-x: auto; background: var(--vscode-textCodeBlock-background); }
   pre code { padding: 0; background: none; }
+  table { border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 3px 10px; border: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35)); text-align: left; }
   a { color: var(--vscode-textLink-foreground); }
+  .mermaid { margin: 4px 0 8px; } .mermaid svg { max-width: 100%; height: auto; }
+  .hljs-keyword, .hljs-built_in { color: var(--vscode-symbolIcon-keywordForeground); }
+  .hljs-string { color: var(--vscode-debugTokenExpression-string); }
+  .hljs-number, .hljs-literal { color: var(--vscode-debugTokenExpression-number); }
+  .hljs-comment { color: var(--vscode-descriptionForeground); font-style: italic; }
+  .hljs-title, .hljs-function { color: var(--vscode-symbolIcon-functionForeground); }
+  .hljs-type, .hljs-class { color: var(--vscode-symbolIcon-classForeground); }
 </style></head>
 <body><div class="card"><div class="meta">${meta.replace(/[&<]/g, (c) => (c === '&' ? '&amp;' : '&lt;'))}</div>${body}</div>
-<script nonce="${nonce}">acquireVsCodeApi().postMessage(document.body.getBoundingClientRect().height)</script>
+${diagrams ? `<script nonce="${nonce}" src="${mermaid}"></script>` : ''}
+<script nonce="${nonce}">
+  const report = () => acquireVsCodeApi().postMessage(document.body.getBoundingClientRect().height)
+  const blocks = [...document.querySelectorAll('code.language-mermaid')]
+
+  if (!blocks.length || typeof mermaid === 'undefined') report()
+  else {
+    for (const code of blocks) {
+      const diagram = document.createElement('div')
+      diagram.className = 'mermaid'
+      diagram.textContent = code.textContent
+      code.closest('pre').replaceWith(diagram)
+    }
+
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: document.body.classList.contains('vscode-light') ? 'neutral' : 'dark' })
+    mermaid.run().catch(() => {}).finally(report)
+  }
+</script>
 </body></html>`
 }
