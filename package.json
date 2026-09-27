@@ -249,8 +249,8 @@
     ]
   },
   "scripts": {
-    "check": "tsc --noEmit && oxlint src",
-    "lint": "oxlint src"
+    "check": "tsc --noEmit && oxlint src media",
+    "lint": "oxlint src media"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.85.0",

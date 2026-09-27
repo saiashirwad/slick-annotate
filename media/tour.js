@@ -1,11 +1,14 @@
 // The tour document in the sidebar. Any number of steps can be open; one of them, at most, is focused (its code is
 // highlighted). The extension decides which step is focused and tells this page.
 const vscode = acquireVsCodeApi()
+
 const sections = [...document.querySelectorAll('section')]
+
 const indexOf = (section) => Number(section.dataset.index)
 
 // Which steps are open survives the view being hidden and redrawn.
 const opened = new Set(vscode.getState()?.opened ?? [])
+
 for (const section of sections) section.classList.toggle('open', opened.has(indexOf(section)))
 
 function setOpen(section, open) {
