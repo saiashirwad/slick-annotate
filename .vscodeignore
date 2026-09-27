@@ -1,0 +1,15 @@
+**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!WALKS.md
+!schemas/walk.schema.json
+!dist/extension.js
+!dist/extension.js.map
+!dist/mermaid.min.js
+!dist/licenses/**
+!media/walk.js
+!media/walk.css
+!media/walk.svg
+!media/icon.png

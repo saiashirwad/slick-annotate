@@ -87,7 +87,7 @@ export function page(
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${asset('media/walk.css')}">
 </head>
-<body data-document-id="${documentId}" data-opened="${escape(JSON.stringify(opened))}" data-mermaid="${asset('node_modules/mermaid/dist/mermaid.min.js')}">
+<body data-document-id="${documentId}" data-opened="${escape(JSON.stringify(opened))}" data-mermaid="${asset('dist/mermaid.min.js')}">
 ${notice}
 ${content}
 <script src="${asset('media/walk.js')}"></script>

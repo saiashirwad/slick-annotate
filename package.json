@@ -4,12 +4,42 @@
   "description": "Annotate code as you read, copy the annotations as Markdown, and follow and review walks through the code written by an agent.",
   "publisher": "saiashirwad",
   "version": "0.0.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saiashirwad/tandem.git"
+  },
+  "homepage": "https://github.com/saiashirwad/tandem#readme",
+  "bugs": {
+    "url": "https://github.com/saiashirwad/tandem/issues"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "annotations",
+    "code review",
+    "walkthrough",
+    "coding agent"
+  ],
+  "icon": "media/icon.png",
   "private": true,
+  "packageManager": "bun@1.4.0",
   "type": "module",
   "engines": {
     "vscode": "^1.138.0"
   },
-  "main": "./src/extension.ts",
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Tandem reads and writes workspace files and runs Git to exclude its local notes."
+    }
+  },
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -19,7 +49,7 @@
         {
           "id": "tandem-walk",
           "title": "Walk",
-          "icon": "$(map)"
+          "icon": "media/walk.svg"
         }
       ]
     },
@@ -278,14 +308,22 @@
     ]
   },
   "scripts": {
-    "check": "tsc --noEmit && tsc --noEmit -p media && oxlint src media",
-    "lint": "oxlint src media"
+    "bundle": "bun build ./src/extension.ts --target=node --format=esm --external=vscode --outdir=dist --sourcemap=linked",
+    "build": "bun run bundle && bun tools/package-assets.ts",
+    "watch": "bun run build && bun run bundle --watch",
+    "check": "tsc --noEmit && tsc --noEmit -p media && tsc --noEmit -p tools && bun run lint",
+    "lint": "oxlint src media tools/package-assets.ts",
+    "format:check": "prettier --check .",
+    "vscode:prepublish": "bun run check && bun run format:check && bun run build",
+    "package": "vsce package --no-dependencies --out dist/"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.85.0",
     "@types/node": "^24",
     "@types/vscode": "^1.138.0",
+    "@vscode/vsce": "4.0.0",
     "oxlint": "1.85.0",
+    "prettier": "3.9.9",
     "typescript": "^7.0.2"
   },
   "dependencies": {

@@ -11,7 +11,7 @@ Neither imports the other; what both need gets its own module (`lines.ts`, `git.
 
 ## Rules
 
-- No build step: VS Code strips types at load, so use `.ts` imports and erasable TypeScript only.
+- Bun manages dependencies and bundles `src/extension.ts` to `dist/extension.js` for VS Code's Node extension host, with `vscode` external. Use `.ts` imports. Run `bun run build` (or `bun run watch`) before reloading.
 - Stable VS Code API only, so it stays publishable.
 - Native UI, except the walk document.
 - Comment only what the code can't say.
@@ -19,4 +19,4 @@ Neither imports the other; what both need gets its own module (`lines.ts`, `git.
 
 ## Checking
 
-`npm run check` and `npx prettier --check .` must pass. There are no tests: run **Developer: Reload Window** (the extension is installed from this folder) and try the change.
+`bun run check` and `bun run format:check` must pass. `bun run package` runs both checks and the Bun build before producing the VSIX. There are no tests: rebuild, run **Developer: Reload Window** (the extension is installed from this folder), and try the change.
