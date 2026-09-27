@@ -1,0 +1,45 @@
+{
+  "title": "From Alt+A to Copy Session",
+  "steps": [
+    {
+      "title": "Follow one annotation",
+      "body": "This tour follows **your annotation**, not the Tour's text: select code, open a native thread, save a snippet, persist it, then copy the session. Tour steps never enter that session. Use **Alt+]** / **Alt+[** to move; wander anywhere and use **Slick: Go to Current Step** to return."
+    },
+    {
+      "title": "Alt+A enters through a command",
+      "body": "The keybinding is just an entry point. It runs only while the editor has focus and delegates to `slick.annotateSelection`; VS Code supplies the active document and selection. Try selecting a few lines and pressing **Alt+A** during this tour.",
+      "file": "package.json",
+      "quote": "\"command\": \"slick.annotateSelection\",\n        \"key\": \"alt+a\",\n        \"when\": \"editorTextFocus\""
+    },
+    {
+      "title": "A selection becomes a native thread",
+      "body": "With an empty selection inside an existing annotation, the handler reuses its thread. Otherwise it creates a thread covering whole lines. `reveal` focuses the reply box using the proposed Comments API. Nothing has been saved yet: this is only the editor UI.",
+      "file": "src/extension.ts",
+      "quote": "const thread = existing ?? controller.createCommentThread(document.uri, wholeLines(document, selection), [])\n      await thread.reveal(undefined, focusReply)"
+    },
+    {
+      "title": "Saving captures the snippet and your words",
+      "body": "The annotation command receives the thread and your text. `begin` captures the selected whole lines on the first save; replies reuse the original snippet. The record gets its own ID, a shared thread ID, a workspace-relative file and a timestamp. This is the durable annotation, distinct from VS Code's comment object.",
+      "file": "src/extension.ts",
+      "quote": "const annotation: Annotation = {\n        id: randomUUID(),\n        threadId: previous?.threadId ?? randomUUID(),\n        file: vscode.workspace.asRelativePath(thread.uri, false),\n        range: thread.range && fromRange(thread.range),\n        snippet,\n        body: text,\n        createdAt: new Date().toISOString(),\n      }"
+    },
+    {
+      "title": "The session is written to disk",
+      "body": "After pushing the record into `session.annotations`, the handler calls `persist`, which delegates here. The destination is **`.slick/session.json`**. Its first save also excludes `.slick/` locally in Git. Loading this JSON and rebuilding native threads restores annotations next time; Tour progress uses separate VS Code workspace state.",
+      "file": "src/session.ts",
+      "quote": "export function save(root: string, session: Session) {\n  const path = sessionPath(root)\n\n  if (!existsSync(path)) excludeFromGit(root)\n  mkdirSync(dirname(path), { recursive: true })\n  writeFileSync(path, JSON.stringify(session, null, 2) + '\\n')\n}"
+    },
+    {
+      "title": "Copy Session reads the same in-memory session",
+      "body": "The Copy Session command does not scrape comment widgets. It formats the annotation records and writes plain text to the clipboard, then reports how many were copied. Tour comments belong to another controller and never enter this array. Add an annotation now and run **Slick: Copy Session** to see the separation.",
+      "file": "src/extension.ts",
+      "quote": "await vscode.env.clipboard.writeText(format(session))\n      vscode.window.setStatusBarMessage(`Copied ${count} annotation${count === 1 ? '' : 's'}`, 2000)"
+    },
+    {
+      "title": "Formatting preserves order without repeating snippets",
+      "body": "The formatter walks annotations in insertion order. A set remembers which thread's snippet has already been emitted, so replies keep their text without duplicating the code. The output joins a location heading, fenced snippet and annotation body. You supply the surrounding prompt when pasting. That's the entire flow—**End Tour** removes only this Tour's UI, not your annotations.",
+      "file": "src/copy.ts",
+      "quote": "const snippet = printed.has(a.threadId) ? '' : fenced(a.snippet, extname(a.file).slice(1))\n      printed.add(a.threadId)\n\n      return [heading, snippet, a.body].filter(Boolean).join('\\n\\n')"
+    }
+  ]
+}
