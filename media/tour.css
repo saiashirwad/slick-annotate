@@ -51,26 +51,22 @@ section:not(.expanded) .details {
   overflow: hidden;
 }
 
-/* A step's refs: other places worth seeing, as small links under its text. */
+/* A step's refs: other places worth seeing, as a row of links under its text. */
 
 .refs {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px 14px;
   margin: 0 0 12px;
-}
-
-.ref {
-  padding: 1px 8px;
-  border: 1px solid color-mix(in srgb, var(--vscode-textLink-foreground) 35%, transparent);
-  border-radius: 10px;
   font-family: var(--vscode-editor-font-family);
-  font-size: 12px;
-  text-decoration: none;
+  font-size: 12.5px;
 }
 
-.ref:hover {
-  background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent);
+.ref::before {
+  content: '↗ ';
+  text-decoration: none;
+  display: inline-block;
+  margin-right: 2px;
 }
 
 .more {
@@ -166,8 +162,34 @@ strong {
   font-weight: 600;
 }
 
+/* Links, including links to code, are underlined so they read as clickable next to plain inline code. */
+
 a {
   color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--vscode-textLink-foreground) 50%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+a:hover {
+  text-decoration-color: var(--vscode-textLink-foreground);
+}
+
+a:focus {
+  outline: none;
+}
+
+a:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+a code {
+  color: var(--vscode-textLink-foreground);
+}
+
+a:hover code {
+  background: color-mix(in srgb, var(--vscode-textLink-foreground) 24%, transparent);
 }
 
 blockquote {
