@@ -20,3 +20,7 @@ Neither imports the other; what both need gets its own module (`lines.ts`, `git.
 ## Checking
 
 `bun run check` and `bun run format:check` must pass. `bun run package` runs both checks and the Bun build before producing the VSIX. There are no tests: rebuild, run **Developer: Reload Window** (the extension is installed from this folder), and try the change.
+
+## Publishing
+
+Bump the version and run `bun run package`. Use Codex computer use in Helium to open [the publisher dashboard](https://marketplace.visualstudio.com/manage/publishers/saiashirwad), choose Tandem → More Actions → Update, and upload `dist/tandem-<version>.vsix`. Check Marketplace verification status; no PAT or Azure subscription is needed.
