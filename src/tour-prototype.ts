@@ -1,6 +1,7 @@
 // Throwaway Tour player for #6: file-backed, no agent bridge yet.
 import * as vscode from 'vscode'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 type Step = { title: string; body: string; file?: string; quote?: string }
@@ -9,12 +10,12 @@ type Tour = { title: string; steps: Step[] }
 
 export function activateTour(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder) {
   const path = join(folder.uri.fsPath, '.slick', 'tour.json')
-  // The current step's text, shown in VS Code's own Markdown preview beside the code.
-  const page = vscode.Uri.joinPath(folder.uri, '.slick', 'step.md')
   let tour: Tour | undefined
   let current = context.workspaceState.get('slick.tourIndex', 0)
   let active = !context.workspaceState.get('slick.tourEnded', false)
   let place: { uri: vscode.Uri; range: vscode.Range } | undefined
+  // The current step's text, in a small web panel inserted between lines of code (proposed `editorInsets`).
+  let card: vscode.WebviewEditorInset | undefined
   let revision = 0
   const changed = new vscode.EventEmitter<void>()
 
@@ -52,11 +53,28 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     decorate()
   }
 
-  async function showText(step: Step) {
-    const heading = `${current + 1}/${tour!.steps.length} · ${tour!.title}`
-    writeFileSync(page.fsPath, `<sub>${heading}</sub>\n\n# ${step.title}\n\n${step.body}\n`)
-    await vscode.commands.executeCommand('markdown.showLockedPreviewToSide', page)
-    await vscode.commands.executeCommand('markdown.preview.refresh')
+  // Renders with VS Code's own Markdown engine, then resizes the panel to fit once the webview has measured it.
+  async function showCard(editor: vscode.TextEditor, line: number, step: Step) {
+    card?.dispose()
+    const meta = `${current + 1}/${tour!.steps.length} · ${tour!.title}`
+    const html = page(meta, await vscode.commands.executeCommand<string>('markdown.api.render', `# ${step.title}\n\n${step.body}`))
+
+    const open = (height: number) => {
+      const inset = vscode.window.createWebviewTextEditorInset(editor, line, height, { enableScripts: true })
+      inset.webview.html = html
+
+      inset.webview.onDidReceiveMessage((pixels: number) => {
+        const fitted = Math.ceil(pixels / lineHeight())
+
+        if (inset !== card || fitted === height) return
+        inset.dispose()
+        card = open(fitted)
+      })
+
+      return inset
+    }
+
+    card = open(Math.min(12, 4 + Math.ceil(step.body.length / 90)))
   }
 
   function update() {
@@ -69,6 +87,12 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
   async function show(navigate: boolean) {
     const version = ++revision
+
+    if (navigate || !active) {
+      card?.dispose()
+      card = undefined
+    }
+
     clear()
     update()
     const step = active ? tour?.steps[current] : undefined
@@ -77,7 +101,9 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
     try {
       if (!step.file) {
-        if (navigate) await showText(step)
+        const editor = vscode.window.activeTextEditor
+
+        if (navigate && editor) await showCard(editor, 0, step)
 
         return
       }
@@ -101,13 +127,18 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       decorate()
 
       if (!navigate) return
-      await showText(step)
-      const editor = await vscode.window.showTextDocument(document, { viewColumn: vscode.ViewColumn.One })
+      const editor = await vscode.window.showTextDocument(document)
 
-      if (version !== revision || !place) return
-      editor.selection = new vscode.Selection(place.range.start, place.range.start)
-      editor.revealRange(place.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
-      decorate()
+      if (version !== revision) return
+
+      if (place) {
+        editor.selection = new vscode.Selection(place.range.start, place.range.start)
+        editor.revealRange(place.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+        decorate()
+      }
+
+      // Insets count lines from 1, so this sits just under the step's last line.
+      await showCard(editor, place ? place.range.end.line + 1 : 0, step)
     } catch (error) {
       if (version === revision) view.message = `Cannot open this step: ${String(error)}`
     }
@@ -160,7 +191,41 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       void context.workspaceState.update('slick.tourEnded', true)
       void show(false)
     }),
-    { dispose: () => { ++revision } },
+    { dispose: () => { ++revision; card?.dispose() } },
   )
   reload()
+}
+
+// Pixels per editor line, following VS Code's rules for `editor.lineHeight`.
+function lineHeight() {
+  const config = vscode.workspace.getConfiguration('editor')
+  const fontSize = config.get<number>('fontSize', 14)
+  const height = config.get<number>('lineHeight', 0)
+
+  if (height <= 0) return Math.round(fontSize * 1.5)
+
+  return height < 8 ? fontSize * height : height
+}
+
+function page(meta: string, body: string) {
+  const nonce = randomUUID().replaceAll('-', '')
+
+  return `<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<style>
+  html, body { margin: 0; background: transparent; }
+  body { padding: 4px 0 8px; font: 14px/1.6 var(--vscode-font-family); color: var(--vscode-editor-foreground); }
+  .card { max-width: 72ch; padding: 10px 16px 12px; border-left: 3px solid var(--vscode-focusBorder); border-radius: 6px; background: var(--vscode-editorWidget-background); }
+  .meta { font-size: 12px; opacity: 0.6; }
+  h1 { margin: 2px 0 6px; font-size: 16px; font-weight: 600; }
+  p, ul, ol { margin: 0 0 8px; } .card > :last-child { margin-bottom: 0; }
+  code { font: 0.9em var(--vscode-editor-font-family); padding: 1px 4px; border-radius: 3px; background: var(--vscode-textCodeBlock-background); }
+  pre { margin: 0 0 8px; padding: 8px 12px; border-radius: 4px; overflow-x: auto; background: var(--vscode-textCodeBlock-background); }
+  pre code { padding: 0; background: none; }
+  a { color: var(--vscode-textLink-foreground); }
+</style></head>
+<body><div class="card"><div class="meta">${meta.replace(/[&<]/g, (c) => (c === '&' ? '&amp;' : '&lt;'))}</div>${body}</div>
+<script nonce="${nonce}">acquireVsCodeApi().postMessage(document.body.getBoundingClientRect().height)</script>
+</body></html>`
 }

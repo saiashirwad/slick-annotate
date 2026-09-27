@@ -10,7 +10,8 @@
   },
   "main": "./src/extension.ts",
   "enabledApiProposals": [
-    "commentReveal"
+    "commentReveal",
+    "editorInsets"
   ],
   "activationEvents": [
     "onStartupFinished"
