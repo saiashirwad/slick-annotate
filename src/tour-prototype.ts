@@ -16,12 +16,8 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   let place: { uri: vscode.Uri; range: vscode.Range } | undefined
   // The current step's text, in a small web panel inserted between lines of code (proposed `editorInsets`).
   let card: vscode.WebviewEditorInset | undefined
-  let forced = false
-  let thread: vscode.CommentThread | undefined
-  const controller = vscode.comments.createCommentController('slick-tour', 'Slick Tour')
   let revision = 0
   const changed = new vscode.EventEmitter<void>()
-  const lensesChanged = new vscode.EventEmitter<void>()
 
   const decoration = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
@@ -47,8 +43,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   })
 
   function decorate() {
-    lensesChanged.fire()
-
     for (const editor of vscode.window.visibleTextEditors) {
       editor.setDecorations(decoration, place?.uri.toString() === editor.document.uri.toString() ? [place.range] : [])
     }
@@ -75,34 +69,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   function showCard(editor: vscode.TextEditor, line: number, html: string, step: Step) {
     card?.dispose()
     const index = current
-    const style = vscode.workspace.getConfiguration('slick').get('tourCard')
-
-    if (style === 'comment') {
-      // VS Code's own comment widget, as in the first prototype, with the title shown once.
-      const comment: vscode.Comment = { author: { name: 'Tour' }, body: new vscode.MarkdownString(step.body), mode: vscode.CommentMode.Preview }
-      thread = controller.createCommentThread(editor.document.uri, place?.range ?? new vscode.Range(0, 0, 0, 0), [comment])
-
-      if (!place) thread.range = undefined
-      thread.canReply = false
-      thread.label = `Step ${current + 1} of ${tour!.steps.length} · ${step.title}`
-      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded
-
-      return
-    }
-
-    if (style === 'hover') {
-      // VS Code's own hover, drawn instantly. The provider below answers for this one request, wherever the cursor is.
-      // The hover opens at the cursor and closes on scroll, so place and reveal first.
-      if (place) {
-        editor.selection = new vscode.Selection(place.range.start, place.range.start)
-        editor.revealRange(place.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
-      }
-
-      forced = true
-      void vscode.commands.executeCommand('editor.action.showHover', { focus: 'noAutoFocus' })
-
-      return
-    }
 
     const open = (height: number) => {
       const inset = vscode.window.createWebviewTextEditorInset(editor, line, height, { enableScripts: true })
@@ -137,8 +103,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     if (navigate || !active) {
       card?.dispose()
       card = undefined
-      thread?.dispose()
-      thread = undefined
     }
 
     clear()
@@ -228,33 +192,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   context.subscriptions.push(
     decoration, view, changed, watcher,
     watcher.onDidCreate(reload), watcher.onDidChange(reload), watcher.onDidDelete(reload),
-    vscode.languages.registerHoverProvider({ scheme: 'file' }, {
-      // Only answers when the tour asks, so the popup never reappears just because the mouse passed over the code.
-      provideHover: () => {
-        const step = active ? tour?.steps[current] : undefined
-
-        if (!step || !forced) return
-        forced = false
-
-        return new vscode.Hover(new vscode.MarkdownString(`Step ${current + 1} of ${tour!.steps.length}\n\n#### ${step.title}\n\n${step.body}`))
-      },
-    }),
-    // A clickable line above the current step that brings its text back.
-    vscode.languages.registerCodeLensProvider({ scheme: 'file' }, {
-      onDidChangeCodeLenses: lensesChanged.event,
-      provideCodeLenses: (document) => {
-        const step = active ? tour?.steps[current] : undefined
-
-        if (!step || !place || place.uri.toString() !== document.uri.toString()) return []
-
-        return [new vscode.CodeLens(place.range, {
-          title: `$(comment-discussion) Step ${current + 1} of ${tour!.steps.length}: ${step.title}`,
-          command: 'slick.tourCurrent',
-          tooltip: 'Show this step again',
-        })]
-      },
-    }),
-    lensesChanged, controller,
     vscode.window.onDidChangeVisibleTextEditors(decorate),
     vscode.workspace.onDidChangeTextDocument(({ document }) => {
       if (place?.uri.toString() === document.uri.toString()) void show(false)
