@@ -184,12 +184,24 @@ a:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
 }
 
+/* Linked code is marked by the underline alone, so plain inline code keeps the tinted look to itself. */
 a code {
+  padding: 0;
   color: var(--vscode-textLink-foreground);
+  background: none;
 }
 
-a:hover code {
-  background: color-mix(in srgb, var(--vscode-textLink-foreground) 24%, transparent);
+/* On the current step the file name takes you back to its code. */
+section.current .file {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--vscode-textLink-foreground) 50%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+section.current .file:hover {
+  text-decoration-color: var(--vscode-textLink-foreground);
 }
 
 blockquote {

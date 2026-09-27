@@ -27,6 +27,10 @@ document.addEventListener('click', (event) => {
   }
 
   if (!section || anchor || String(getSelection())) return
+
+  // A collapsed step opens when clicked anywhere. The open one only goes back to its code from its file name,
+  // so clicking around while reading doesn't pull the editor back.
+  if (section.classList.contains('current') && !event.target.closest('.file')) return
   vscode.postMessage({ go: Number(section.dataset.index) })
 })
 
