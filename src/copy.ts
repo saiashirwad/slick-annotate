@@ -2,28 +2,31 @@ import { extname } from 'node:path'
 import type { Range, Session } from './session.ts'
 
 export function format(session: Session) {
-  const printed = new Set<string>()
+  const printedThreads = new Set<string>()
+  const blocks: string[] = []
 
-  return session.annotations
-    .map((a) => {
-      const heading = `## ${a.file}${a.range ? `:${lines(a.range)}` : ''}`
-      const snippet = printed.has(a.threadId) ? '' : fenced(a.snippet, extname(a.file).slice(1))
-      printed.add(a.threadId)
+  for (const annotation of session.annotations) {
+    const parts = [`## ${annotation.file}${annotation.range ? `:${lines(annotation.range)}` : ''}`]
 
-      return [heading, snippet, a.body].filter(Boolean).join('\n\n')
-    })
-    .join('\n\n')
+    if (annotation.range && !printedThreads.has(annotation.threadId)) {
+      parts.push(fenced(annotation.snippet, extname(annotation.file).slice(1)))
+    }
+
+    parts.push(annotation.body)
+    blocks.push(parts.filter(Boolean).join('\n\n'))
+    printedThreads.add(annotation.threadId)
+  }
+
+  return blocks.join('\n\n')
 }
 
 function fenced(code: string, language: string) {
-  code = code.replace(/^\s*\n/, '').trimEnd()
-
   if (!code) return ''
   let fence = '```'
 
   while (code.includes(fence)) fence += '`'
 
-  return `${fence}${language}\n${code}\n${fence}`
+  return `${fence}${language}\n${code}${code.endsWith('\n') ? '' : '\n'}${fence}`
 }
 
 function lines({ start, end }: Range) {

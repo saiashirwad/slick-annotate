@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Slick tour",
+  "title": "Tandem tour",
   "description": "A walk through the code, shown in the Tour view.",
   "type": "object",
   "required": ["title", "steps"],

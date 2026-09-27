@@ -1,11 +1,10 @@
+import { errorMessage } from './validation.ts'
 import * as vscode from 'vscode'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import { format } from './copy.ts'
-import { load, save, type Annotation, type Range, type Session } from './session.ts'
+import { load, save, type Annotation, type Range, type Session, type ThreadAnchor } from './session.ts'
 import { wholeLines } from './lines.ts'
-
-const annotationOf = new WeakMap<vscode.Comment, Annotation>()
 
 export function activateAnnotations(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder) {
   const root = folder.uri.fsPath
@@ -14,247 +13,336 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
   try {
     session = load(root)
   } catch (error) {
-    vscode.window.showWarningMessage(`Annotations are off until .tandem/session.json is fixed: ${String(error)}`)
+    void vscode.window.showWarningMessage(
+      `Annotations are off until .tandem/session.json is fixed and the window reloaded: ${errorMessage(error)}`,
+    )
 
     return
   }
 
-  const persist = () => save(root, session)
-
-  // Paths are saved relative to this folder, so files elsewhere can't be annotated.
-  const annotatable = (uri: vscode.Uri) =>
-    uri.scheme === 'file' && vscode.workspace.getWorkspaceFolder(uri)?.uri.toString() === folder.uri.toString()
-
-  const refuse = () => vscode.window.setStatusBarMessage(`Only files in ${folder.name} can be annotated`, 3000)
-
+  let sessionGeneration = 0
+  const annotationIds = new WeakMap<vscode.Comment, string>()
+  const anchors = new Map<vscode.CommentThread, ThreadAnchor>()
   const controller = vscode.comments.createCommentController('tandem', 'Tandem')
   controller.options = { placeHolder: 'Annotate…' }
+
+  function canAnnotate(uri: vscode.Uri) {
+    return uri.scheme === 'file' && vscode.workspace.getWorkspaceFolder(uri)?.uri.toString() === folder.uri.toString()
+  }
+
+  function refuseOutsideWorkspace() {
+    vscode.window.setStatusBarMessage(`Only files in ${folder.name} can be annotated`, 3000)
+  }
+
   controller.commentingRangeProvider = {
     provideCommentingRanges: (document) =>
-      annotatable(document.uri)
+      canAnnotate(document.uri)
         ? [new vscode.Range(new vscode.Position(0, 0), document.lineAt(document.lineCount - 1).range.end)]
         : [],
   }
 
-  // Threads started from the gutter "+" are created by VS Code, so they're only tracked once saved.
-  const threads = new Set<vscode.CommentThread>()
+  function createRegisteredComment(annotation: Annotation, mode = vscode.CommentMode.Preview) {
+    const comment = toComment(annotation, mode)
+    annotationIds.set(comment, annotation.id)
 
-  for (const annotations of Map.groupBy(session.annotations, (a) => a.threadId).values()) {
-    const first = annotations[0]
-    const uri = vscode.Uri.joinPath(folder.uri, first.file)
-
-    const thread = createThread(
-      uri,
-      first.range && toRange(first.range),
-      annotations.map((a) => toComment(a)),
-    )
-
-    settle(thread)
-    threads.add(thread)
+    return comment
   }
 
-  // The API needs a range at creation; a whole-file thread has none.
-  function createThread(uri: vscode.Uri, range: vscode.Range | undefined, comments: vscode.Comment[]) {
+  function createThread(anchor: ThreadAnchor, comments: vscode.Comment[]) {
+    const uri = vscode.Uri.joinPath(folder.uri, anchor.file)
+    const range = anchor.range ? toRange(anchor.range) : undefined
     const thread = controller.createCommentThread(uri, range ?? new vscode.Range(0, 0, 0, 0), comments)
-
-    if (!range) thread.range = undefined
+    thread.range = range
 
     return thread
   }
 
-  function begin(thread: vscode.CommentThread) {
-    if (!thread.range) {
-      threads.add(thread)
+  for (const annotations of Map.groupBy(session.annotations, (annotation) => annotation.threadId).values()) {
+    const { threadId, file, range, snippet } = annotations[0]
+    const anchor = { threadId, file, range, snippet }
 
-      return ''
-    }
+    const thread = createThread(
+      anchor,
+      annotations.map((annotation) => createRegisteredComment(annotation)),
+    )
 
-    const document = vscode.workspace.textDocuments.find((d) => d.uri.toString() === thread.uri.toString())
-
-    if (!document) return
-    thread.range = wholeLines(document, thread.range)
-    threads.add(thread)
-
-    return document.getText(thread.range)
+    anchors.set(thread, anchor)
+    collapseSavedThread(thread)
   }
 
-  function annotate(thread: vscode.CommentThread, text: string) {
-    const previous = thread.comments[0] && annotationOf.get(thread.comments[0])
-    const snippet = previous?.snippet ?? begin(thread)
+  function saveSession(next: Session) {
+    try {
+      save(root, next)
 
-    if (snippet === undefined || !text.trim()) return
+      return true
+    } catch (error) {
+      void vscode.window.showWarningMessage(`Could not save annotations: ${errorMessage(error)}`)
 
-    const annotation: Annotation = {
-      id: randomUUID(),
-      threadId: previous?.threadId ?? randomUUID(),
-      file: vscode.workspace.asRelativePath(thread.uri, false),
-      range: thread.range && fromRange(thread.range),
-      snippet,
-      body: text,
-      createdAt: new Date().toISOString(),
+      return false
     }
-
-    session.annotations.push(annotation)
-    persist()
-    thread.comments = [...thread.comments, toComment(annotation)]
-    settle(thread)
   }
 
-  const threadOf = (comment: vscode.Comment) => [...threads].find((t) => t.comments.includes(comment))
+  function appendAnnotation(anchor: ThreadAnchor, body: string, thread?: vscode.CommentThread) {
+    if (!body.trim()) return false
+    const annotation: Annotation = { ...anchor, id: randomUUID(), body, createdAt: new Date().toISOString() }
+    const next = { annotations: [...session.annotations, annotation] }
 
-  function setMode(comment: vscode.Comment, mode: vscode.CommentMode) {
-    const thread = threadOf(comment)
-    const annotation = annotationOf.get(comment)
+    if (!saveSession(next)) return false
+    session = next
+
+    if (!thread) thread = createThread(anchor, [])
+    else if (!anchors.has(thread)) thread.range = anchor.range ? toRange(anchor.range) : undefined
+    anchors.set(thread, anchor)
+    thread.comments = [...thread.comments, createRegisteredComment(annotation)]
+    collapseSavedThread(thread)
+
+    return true
+  }
+
+  function annotationFor(comment: vscode.Comment) {
+    const id = annotationIds.get(comment)
+
+    return session.annotations.find((annotation) => annotation.id === id)
+  }
+
+  function threadFor(comment: vscode.Comment) {
+    return [...anchors.keys()].find((thread) => thread.comments.includes(comment))
+  }
+
+  function setCommentMode(comment: vscode.Comment, mode: vscode.CommentMode) {
+    const thread = threadFor(comment)
+    const annotation = annotationFor(comment)
 
     if (!thread || !annotation) return
-    thread.comments = thread.comments.map((c) => (c === comment ? toComment(annotation, mode) : c))
+    thread.comments = thread.comments.map((current) =>
+      current === comment ? createRegisteredComment(annotation, mode) : current,
+    )
+  }
+
+  async function askForAnnotation(
+    anchor: ThreadAnchor,
+    title: string,
+    thread?: vscode.CommentThread,
+    document?: vscode.TextDocument,
+  ) {
+    const generation = sessionGeneration
+    const documentVersion = document?.version
+    const body = await vscode.window.showInputBox({ title, placeHolder: 'Annotate…', ignoreFocusOut: true })
+
+    if (!body?.trim()) return
+
+    if (generation !== sessionGeneration || (thread && !anchors.has(thread))) {
+      vscode.window.setStatusBarMessage(
+        'The session was cleared or the thread deleted. Select the code again to annotate it.',
+        5000,
+      )
+
+      return
+    }
+
+    if (appendAnnotation(anchor, body, thread) && document && document.version !== documentVersion) {
+      vscode.window.setStatusBarMessage(
+        'Code changed while you wrote. The annotation keeps the snapshot you selected.',
+        5000,
+      )
+    }
   }
 
   context.subscriptions.push(
     controller,
-
     vscode.commands.registerCommand('tandem.annotateSelection', async () => {
       const editor = vscode.window.activeTextEditor
 
       if (!editor) return
       const { document, selection } = editor
 
-      if (!annotatable(document.uri)) return refuse()
+      if (!canAnnotate(document.uri)) return refuseOutsideWorkspace()
       const line = selection.active.line
 
       const existing = selection.isEmpty
-        ? [...threads].find(
-            (t) =>
-              t.uri.toString() === document.uri.toString() &&
-              t.range &&
-              t.range.start.line <= line &&
-              line <= t.range.end.line,
+        ? [...anchors.keys()].find(
+            (thread) =>
+              thread.uri.toString() === document.uri.toString() &&
+              thread.range &&
+              thread.range.start.line <= line &&
+              line <= thread.range.end.line,
           )
         : undefined
 
+      const savedAnchor = existing && anchors.get(existing)
       const range = existing?.range ?? wholeLines(document, selection)
-      const text = await ask(`${existing ? 'Add to the annotation on' : 'Annotate'} ${linesOf(range)}`)
 
-      if (text) annotate(existing ?? createThread(document.uri, range, []), text)
+      const anchor = savedAnchor ?? {
+        threadId: randomUUID(),
+        file: vscode.workspace.asRelativePath(document.uri, false),
+        range: fromRange(range),
+        snippet: document.getText(range),
+      }
+
+      await askForAnnotation(
+        anchor,
+        `${existing ? 'Add to the annotation on' : 'Annotate'} ${linesOf(range)}`,
+        existing,
+        savedAnchor ? undefined : document,
+      )
     }),
 
-    vscode.commands.registerCommand('tandem.annotate', ({ thread, text }: vscode.CommentReply) => {
-      annotate(thread, text)
-      // Collapsing hides the comment box but leaves focus in it.
-      vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
+    vscode.commands.registerCommand('tandem.annotate', async ({ thread, text }: vscode.CommentReply) => {
+      if (!text.trim()) return
+
+      if (!canAnnotate(thread.uri)) return refuseOutsideWorkspace()
+      let anchor = anchors.get(thread)
+
+      if (!anchor) {
+        const document = vscode.workspace.textDocuments.find(
+          (document) => document.uri.toString() === thread.uri.toString(),
+        )
+
+        if (!document && thread.range) {
+          void vscode.window.showWarningMessage('Open the file again before saving this annotation.')
+
+          return
+        }
+
+        const range = document && thread.range ? wholeLines(document, thread.range) : undefined
+        anchor = {
+          threadId: randomUUID(),
+          file: vscode.workspace.asRelativePath(thread.uri, false),
+          range: range ? fromRange(range) : undefined,
+          snippet: document && range ? document.getText(range) : '',
+        }
+      }
+
+      if (appendAnnotation(anchor, text, thread)) {
+        await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
+      }
     }),
 
     vscode.commands.registerCommand('tandem.annotateFile', async (uri?: vscode.Uri) => {
-      uri ??= vscode.window.activeTextEditor?.document.uri
+      const file = uri ?? vscode.window.activeTextEditor?.document.uri
 
-      if (!uri) return
+      if (!file) return
 
-      if (!annotatable(uri)) return refuse()
-      await vscode.window.showTextDocument(uri)
-      const existing = [...threads].find((t) => !t.range && t.uri.toString() === uri.toString())
-      const text = await ask(`${existing ? 'Add to the annotation on' : 'Annotate'} ${basename(uri.path)}`)
+      if (!canAnnotate(file)) return refuseOutsideWorkspace()
 
-      if (text) annotate(existing ?? createThread(uri, undefined, []), text)
+      try {
+        await vscode.window.showTextDocument(file)
+
+        const existing = [...anchors.keys()].find(
+          (thread) => !thread.range && thread.uri.toString() === file.toString(),
+        )
+
+        const anchor = (existing && anchors.get(existing)) ?? {
+          threadId: randomUUID(),
+          file: vscode.workspace.asRelativePath(file, false),
+          snippet: '',
+        }
+
+        await askForAnnotation(
+          anchor,
+          `${existing ? 'Add to the annotation on' : 'Annotate'} ${basename(file.path)}`,
+          existing,
+        )
+      } catch (error) {
+        void vscode.window.showWarningMessage(`Could not annotate ${basename(file.path)}: ${errorMessage(error)}`)
+      }
     }),
 
     vscode.commands.registerCommand('tandem.copySession', async () => {
       const count = session.annotations.length
 
       if (count === 0) return vscode.window.setStatusBarMessage('No annotations to copy', 2000)
-      await vscode.env.clipboard.writeText(format(session))
-      vscode.window.setStatusBarMessage(`Copied ${count} annotation${count === 1 ? '' : 's'}`, 2000)
+
+      try {
+        await vscode.env.clipboard.writeText(format(session))
+        vscode.window.setStatusBarMessage(`Copied ${count} annotation${count === 1 ? '' : 's'}`, 2000)
+      } catch (error) {
+        void vscode.window.showWarningMessage(`Could not copy annotations: ${errorMessage(error)}`)
+      }
     }),
 
     vscode.commands.registerCommand('tandem.clearSession', async () => {
       const count = session.annotations.length
 
       if (count === 0) return vscode.window.setStatusBarMessage('No annotations to clear', 2000)
-      const clear = 'Clear'
 
       const answer = await vscode.window.showWarningMessage(
         `Delete all ${count} annotation${count === 1 ? '' : 's'}?`,
         { modal: true },
-        clear,
+        'Clear',
       )
 
-      if (answer !== clear) return
-      session.annotations = []
-      persist()
+      if (answer !== 'Clear') return
+      const next = { annotations: [] }
 
-      for (const thread of threads) thread.dispose()
-      threads.clear()
+      if (!saveSession(next)) return
+      session = next
+      sessionGeneration++
+
+      for (const thread of anchors.keys()) thread.dispose()
+      anchors.clear()
     }),
 
     vscode.commands.registerCommand('tandem.editAnnotation', (comment: vscode.Comment) =>
-      setMode(comment, vscode.CommentMode.Editing),
+      setCommentMode(comment, vscode.CommentMode.Editing),
+    ),
+    vscode.commands.registerCommand('tandem.cancelEdit', (comment: vscode.Comment) =>
+      setCommentMode(comment, vscode.CommentMode.Preview),
     ),
 
     vscode.commands.registerCommand('tandem.saveAnnotation', (comment: vscode.Comment) => {
-      const annotation = annotationOf.get(comment)
+      const annotation = annotationFor(comment)
       const body = comment.body instanceof vscode.MarkdownString ? comment.body.value : comment.body
 
       if (!annotation || !body.trim()) return
-      annotation.body = body
-      persist()
-      setMode(comment, vscode.CommentMode.Preview)
+
+      const next = {
+        annotations: session.annotations.map((current) =>
+          current.id === annotation.id ? { ...current, body } : current,
+        ),
+      }
+
+      if (!saveSession(next)) return
+      session = next
+      setCommentMode(comment, vscode.CommentMode.Preview)
     }),
 
-    vscode.commands.registerCommand('tandem.cancelEdit', (comment: vscode.Comment) =>
-      setMode(comment, vscode.CommentMode.Preview),
-    ),
-
     vscode.commands.registerCommand('tandem.deleteAnnotation', (comment: vscode.Comment) => {
-      const thread = threadOf(comment)
-      const annotation = annotationOf.get(comment)
+      const thread = threadFor(comment)
+      const annotation = annotationFor(comment)
 
       if (!thread || !annotation) return
-      session.annotations = session.annotations.filter((a) => a !== annotation)
-      persist()
-      thread.comments = thread.comments.filter((c) => c !== comment)
+      const next = { annotations: session.annotations.filter((current) => current.id !== annotation.id) }
+
+      if (!saveSession(next)) return
+      session = next
+      thread.comments = thread.comments.filter((current) => current !== comment)
 
       if (thread.comments.length === 0) {
-        threads.delete(thread)
+        anchors.delete(thread)
         thread.dispose()
       }
     }),
   )
 }
 
-// A saved thread shows just its notes under where they are. Alt+A inside its lines adds to it.
-function settle(thread: vscode.CommentThread) {
+function collapseSavedThread(thread: vscode.CommentThread) {
   thread.canReply = false
-  thread.label = thread.range ? capitalize(linesOf(thread.range)) : basename(thread.uri.path)
+  const label = thread.range ? linesOf(thread.range) : basename(thread.uri.path)
+  thread.label = label[0].toUpperCase() + label.slice(1)
   thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
-}
-
-const capitalize = (text: string) => text[0].toUpperCase() + text.slice(1)
-
-function ask(title: string) {
-  return vscode.window.showInputBox({ title, placeHolder: 'Annotate…', ignoreFocusOut: true })
 }
 
 function linesOf({ start, end }: vscode.Range) {
   return start.line === end.line ? `line ${start.line + 1}` : `lines ${start.line + 1}–${end.line + 1}`
 }
 
-function toComment(annotation: Annotation, mode = vscode.CommentMode.Preview) {
-  const comment: vscode.Comment = {
-    body: annotation.body,
-    mode,
-    author: { name: 'You' },
-    timestamp: new Date(annotation.createdAt),
-  }
-
-  annotationOf.set(comment, annotation)
-
-  return comment
+function toComment(annotation: Annotation, mode: vscode.CommentMode): vscode.Comment {
+  return { body: annotation.body, mode, author: { name: 'You' }, timestamp: new Date(annotation.createdAt) }
 }
 
 function fromRange({ start, end }: vscode.Range): Range {
-  return {
-    start: { line: start.line, character: start.character },
-    end: { line: end.line, character: end.character },
-  }
+  return { start: { line: start.line, character: start.character }, end: { line: end.line, character: end.character } }
 }
 
 function toRange({ start, end }: Range) {

@@ -19,7 +19,7 @@ Terms are defined in [CONTEXT.md](./CONTEXT.md).
 ## The session
 
 - There is one session. Every annotation belongs to it.
-- It lives in `.tandem/session.json` in the workspace. The extension adds `.tandem/` to `.git/info/exclude` when it first saves a session or loads a tour, so neither shows up in git and no tracked file is touched.
+- It lives in `.tandem/session.json` in the workspace. The extension adds `.tandem/` to `.git/info/exclude` when the workspace opens, so neither the session nor a tour shows up in git and no tracked file is touched. If that fails, a warning says why.
 - **Clear session** deletes every annotation.
 - If `session.json` can't be read, annotations are off until it's fixed, with a warning saying why. The file is left as it is, and tours still work.
 - VS Code's built-in Comments panel lists the threads; clicking one jumps to it.
@@ -29,7 +29,7 @@ Terms are defined in [CONTEXT.md](./CONTEXT.md).
 **Copy session** puts plain text on the clipboard: every annotation in the order it was written, each with:
 
 - `path/to/file.ts:40-52` for a range, or just `path/to/file.ts` for a whole file
-- the snippet, in a fenced code block (range annotations only)
+- the snippet, in a fenced code block (range annotations only, and only for the first annotation of each thread, since the rest share it)
 - the text
 
 Nothing else is added. You write the prompt around it when you paste.
@@ -69,8 +69,9 @@ A tour is written by a coding agent to `.tandem/tour.json`: a title and an order
 - Alt+A and Annotate File write through `vscode.window.showInputBox` (with `ignoreFocusOut`), not a thread's comment box. The thread is created only once the input is saved.
   - Before, they opened the thread's own comment box and put the cursor in its reply field with the proposed `commentReveal` API (`thread.reveal(undefined, { focus: Reply })`). That kept the note next to the code and allowed several lines, but proposed APIs can't be published to the Marketplace, and the stable API can show a thread without focusing its reply box. The input box is the trade: publishable, instant and less distracting, but one line only and at the top of the window. If `commentReveal` is finalized, or the one-line limit starts to hurt, going back is an option.
 - Installed in place with **Developer: Install Extension from Location…** pointing at the repo, so a window reload picks up code changes.
-- No build step: `main` points at `src/extension.ts` and VS Code's bundled Node (24.x) strips types at load. TypeScript 7 is used only to type-check (`tsc --noEmit`, with `erasableSyntaxOnly` and `.ts` import extensions). The one runtime dependency is mermaid, loaded from `node_modules` into the tour document only when a step has a diagram.
-- The tour document is a webview view (`registerWebviewViewProvider`), kept alive while hidden. Step bodies are rendered by VS Code's own Markdown engine (`markdown.api.render`), which with the built-in mermaid extension turns diagram fences into `.mermaid` elements. Its stylesheet and script live in `media/` and use only theme colours.
+- No build step: `main` points at `src/extension.ts` and VS Code's bundled Node (24.x) strips types at load. TypeScript 7 is used only to type-check (`tsc --noEmit`, with `erasableSyntaxOnly` and `.ts` import extensions). The runtime dependencies are valibot, which checks `session.json`, `tour.json`, saved tour progress and the tour document's messages before they are used, and mermaid, loaded from `node_modules` into the tour document only when it contains a diagram.
+- The tour document is a webview view (`registerWebviewViewProvider`), kept alive while hidden. Step bodies are rendered by VS Code's own Markdown engine (`markdown.api.render`), which with the built-in mermaid extension turns diagram fences into `.mermaid` elements; if that engine is missing, the tour view says so. Its stylesheet and script live in `media/` and use only theme colours; the script is type-checked with JSDoc against the message types in `src/tour-data.ts`.
+- The extension owns the reader's place (focused step, open steps). The document sends one action per message (`focusStep`, `collapseStep`, `openCode`, `ready`) and renders the state it gets back; it never reports its own rendering as an action.
 - Copy and Clear are titled "Tandem session" rather than just "Session" under the Tandem category, because the Comments panel they sit in also lists other extensions' comments.
 - `.tandem/session.json` is the only source of truth. Threads are rebuilt from it when the workspace opens.
 

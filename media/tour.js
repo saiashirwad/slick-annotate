@@ -1,29 +1,41 @@
+// @ts-check
+/** @typedef {import('../src/tour-data.ts').FromPage} FromPage */
+/** @typedef {import('../src/tour-data.ts').ToPage} ToPage */
+
 const vscode = acquireVsCodeApi()
+
+const documentId = Number(document.body.dataset.documentId)
 
 const sections = [...document.querySelectorAll('section')]
 
+/** @param {HTMLElement} section */
 const indexOf = (section) => Number(section.dataset.index)
 
-// The extension remembers which steps are open, so a new tour starts with them all closed.
-const opened = new Set(document.body.dataset.opened.split(' ').filter(Boolean).map(Number))
+/** @param {FromPage['action']} action */
+const send = (action) => vscode.postMessage({ documentId, action })
 
-for (const section of sections) section.classList.toggle('open', opened.has(indexOf(section)))
+// The extension owns which steps are open; this is only the first paint, before its first message.
+const initiallyOpened = new Set((document.body.dataset.opened ?? '').split(' ').filter(Boolean).map(Number))
 
-function setOpen(section, open) {
-  section.classList.toggle('open', open)
+for (const section of sections) section.classList.toggle('open', initiallyOpened.has(indexOf(section)))
 
-  if (open === opened.has(indexOf(section))) return
+/** @param {string} href */
+function codeLink(href) {
+  const [file = '', quote] = href.split(/#(.*)/s)
 
-  if (open) opened.add(indexOf(section))
-  else opened.delete(indexOf(section))
-  vscode.postMessage({ opened: [...opened] })
+  try {
+    return { file: decodeURI(file), quote: quote === undefined ? undefined : decodeURIComponent(quote) }
+  } catch {
+    return undefined
+  }
 }
 
 document.addEventListener('click', (event) => {
+  if (!(event.target instanceof Element)) return
   const section = event.target.closest('section')
   const more = event.target.closest('.more')
 
-  if (more) {
+  if (more && section) {
     more.textContent = section.classList.toggle('expanded') ? 'Show less' : 'Show more'
 
     return
@@ -34,10 +46,9 @@ document.addEventListener('click', (event) => {
 
   if (href && !href.startsWith('#') && !/^[a-z][a-z0-9+.-]*:/i.test(href)) {
     event.preventDefault()
-    const [file, quote] = href.split(/#(.*)/s)
-    vscode.postMessage({
-      open: quote === undefined ? decodeURI(file) : `${decodeURI(file)}#${decodeURIComponent(quote)}`,
-    })
+    const link = codeLink(href)
+
+    if (link) send({ type: 'openCode', ...link })
 
     return
   }
@@ -45,38 +56,28 @@ document.addEventListener('click', (event) => {
   if (!section || anchor || String(getSelection())) return
 
   if (event.target.closest('.file') && section.classList.contains('open')) {
-    vscode.postMessage({ go: indexOf(section) })
-
-    return
+    return send({ type: 'focusStep', index: indexOf(section) })
   }
 
-  const current = section.classList.contains('current')
-
-  if (event.target.closest('.collapse')) {
-    setOpen(section, false)
-
-    if (current) vscode.postMessage({ unfocus: true })
-
-    return
-  }
+  if (event.target.closest('.collapse')) return send({ type: 'collapseStep', index: indexOf(section) })
 
   // Clicks inside the focused step don't focus it again, so reading never pulls the editor back.
-  if (!current) {
-    setOpen(section, true)
-    vscode.postMessage({ go: indexOf(section) })
-  }
+  if (!section.classList.contains('current')) send({ type: 'focusStep', index: indexOf(section) })
 })
 
-window.addEventListener('message', ({ data }) => {
-  const target = sections.find((section) => indexOf(section) === data.current)
-  const before = target?.getBoundingClientRect().top
+window.addEventListener('message', (/** @type {MessageEvent<ToPage>} */ { data }) => {
+  const target = sections.find((section) => indexOf(section) === data.focusedStep)
+  const before = target?.getBoundingClientRect().top ?? 0
+  const opened = new Set(data.opened)
 
-  for (const section of sections) section.classList.toggle('current', section === target)
+  for (const section of sections) {
+    section.classList.toggle('current', section === target)
+    section.classList.toggle('open', opened.has(indexOf(section)))
+  }
 
   if (!target) return
-  setOpen(target, true)
 
-  if (data.jump) return target.scrollIntoView({ block: 'start' })
+  if (data.scroll === 'reveal') return target.scrollIntoView({ block: 'start' })
   window.scrollBy(0, target.getBoundingClientRect().top - before)
   const { top, bottom, height } = target.getBoundingClientRect()
 
@@ -84,10 +85,29 @@ window.addEventListener('message', ({ data }) => {
   else if (bottom > innerHeight) window.scrollBy({ top: bottom - innerHeight + 8, behavior: 'smooth' })
 })
 
-if (typeof mermaid !== 'undefined') {
-  const theme = document.body.classList.contains('vscode-light') ? 'neutral' : 'dark'
-  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme })
-  mermaid.run().catch(() => {})
+/** @param {string} message */
+function reportProblem(message) {
+  const notice = document.createElement('p')
+  notice.className = 'problem'
+  notice.textContent = message
+  document.body.prepend(notice)
 }
 
-vscode.postMessage({ ready: true })
+// Mermaid is large, so it's loaded only when the rendered Markdown contains a diagram.
+if (document.querySelector('.mermaid')) {
+  const script = document.createElement('script')
+  script.src = document.body.dataset.mermaid ?? ''
+  script.onerror = () => reportProblem("Can't load mermaid, so diagrams show as text.")
+
+  script.onload = () => {
+    const theme = document.body.classList.contains('vscode-light') ? 'neutral' : 'dark'
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme })
+    mermaid
+      .run()
+      .catch((error) => reportProblem(`Can't draw a diagram: ${error instanceof Error ? error.message : error}`))
+  }
+
+  document.body.append(script)
+}
+
+send({ type: 'ready' })
