@@ -17,6 +17,17 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "configuration": {
+      "title": "Slick Annotate",
+      "properties": {
+        "slick.tourCard": {
+          "type": "string",
+          "enum": ["hover", "inset"],
+          "default": "hover",
+          "description": "Prototype: show a tour step's text in VS Code's hover popup, or in an inline web panel."
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [{ "id": "slick-tour", "title": "Tour", "icon": "$(map)" }]
     },

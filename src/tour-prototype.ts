@@ -16,6 +16,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   let place: { uri: vscode.Uri; range: vscode.Range } | undefined
   // The current step's text, in a small web panel inserted between lines of code (proposed `editorInsets`).
   let card: vscode.WebviewEditorInset | undefined
+  let forced = false
   let revision = 0
   const changed = new vscode.EventEmitter<void>()
 
@@ -66,6 +67,20 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   // Opens at an estimated height; the webview measures itself and the panel is rebuilt only if the text overflows.
   function showCard(editor: vscode.TextEditor, line: number, html: string, step: Step) {
     card?.dispose()
+
+    if (vscode.workspace.getConfiguration('slick').get('tourCard') === 'hover') {
+      // VS Code's own hover, drawn instantly. The provider below answers for this one request, wherever the cursor is.
+      // The hover opens at the cursor and closes on scroll, so place and reveal first.
+      if (place) {
+        editor.selection = new vscode.Selection(place.range.start, place.range.start)
+        editor.revealRange(place.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+      }
+
+      forced = true
+      void vscode.commands.executeCommand('editor.action.showHover', { focus: 'noAutoFocus' })
+
+      return
+    }
 
     const open = (height: number) => {
       const inset = vscode.window.createWebviewTextEditorInset(editor, line, height, { enableScripts: true })
@@ -187,6 +202,18 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   context.subscriptions.push(
     decoration, view, changed, watcher,
     watcher.onDidCreate(reload), watcher.onDidChange(reload), watcher.onDidDelete(reload),
+    vscode.languages.registerHoverProvider({ scheme: 'file' }, {
+      provideHover: (document, position) => {
+        const step = active ? tour?.steps[current] : undefined
+        const here = place?.uri.toString() === document.uri.toString() && place.range.contains(position)
+
+        if (!step || !(forced || here)) return
+        forced = false
+        const text = new vscode.MarkdownString(`Step ${current + 1} of ${tour!.steps.length}\n\n#### ${step.title}\n\n${step.body}`)
+
+        return new vscode.Hover(text, here ? place!.range : undefined)
+      },
+    }),
     vscode.window.onDidChangeVisibleTextEditors(decorate),
     vscode.workspace.onDidChangeTextDocument(({ document }) => {
       if (place?.uri.toString() === document.uri.toString()) void show(false)
