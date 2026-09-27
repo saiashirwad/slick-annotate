@@ -241,7 +241,8 @@ function lineHeight() {
 // Mermaid is only loaded into cards that have a diagram; the card reports its height once diagrams have drawn.
 function page(meta: string, body: string, webview: vscode.Webview, root: vscode.Uri) {
   const nonce = randomUUID().replaceAll('-', '')
-  const diagrams = body.includes('language-mermaid')
+  // VS Code's built-in mermaid extension turns fences into `.mermaid` elements; without it they stay code blocks.
+  const diagrams = /class="mermaid"|language-mermaid/.test(body)
   const mermaid = webview.asWebviewUri(vscode.Uri.joinPath(root, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js'))
 
   return `<!doctype html>
@@ -276,17 +277,15 @@ function page(meta: string, body: string, webview: vscode.Webview, root: vscode.
 ${diagrams ? `<script nonce="${nonce}" src="${mermaid}"></script>` : ''}
 <script nonce="${nonce}">
   const report = () => acquireVsCodeApi().postMessage(document.body.getBoundingClientRect().height)
-  const blocks = [...document.querySelectorAll('code.language-mermaid')]
+  for (const code of document.querySelectorAll('code.language-mermaid')) {
+    const diagram = document.createElement('div')
+    diagram.className = 'mermaid'
+    diagram.textContent = code.textContent
+    code.closest('pre').replaceWith(diagram)
+  }
 
-  if (!blocks.length || typeof mermaid === 'undefined') report()
+  if (!document.querySelector('.mermaid') || typeof mermaid === 'undefined') report()
   else {
-    for (const code of blocks) {
-      const diagram = document.createElement('div')
-      diagram.className = 'mermaid'
-      diagram.textContent = code.textContent
-      code.closest('pre').replaceWith(diagram)
-    }
-
     mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: document.body.classList.contains('vscode-light') ? 'neutral' : 'dark' })
     mermaid.run().catch(() => {}).finally(report)
   }
