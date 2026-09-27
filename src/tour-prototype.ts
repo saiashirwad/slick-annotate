@@ -61,6 +61,8 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
   // Every step's card, rendered by VS Code's own Markdown engine as soon as the tour loads, so moving is instant.
   let pages: Promise<string>[] = []
+  // Heights the cards measured themselves at, by step, so a revisited card opens at exactly the right size.
+  let heights: number[] = []
 
   function render(step: Step, index: number) {
     const meta = `Step ${index + 1} of ${tour!.steps.length}`
@@ -72,6 +74,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   // Opens at an estimated height; the webview measures itself and the panel is rebuilt only if the text overflows.
   function showCard(editor: vscode.TextEditor, line: number, html: string, step: Step) {
     card?.dispose()
+    const index = current
     const style = vscode.workspace.getConfiguration('slick').get('tourCard')
 
     if (style === 'comment') {
@@ -107,6 +110,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
       inset.webview.onDidReceiveMessage((pixels: number) => {
         const fitted = Math.ceil(pixels / lineHeight())
+        heights[index] = Math.max(fitted, 1)
 
         if (inset !== card || fitted <= height) return
         inset.dispose()
@@ -116,7 +120,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       return inset
     }
 
-    card = open(estimate(step))
+    card = open(heights[index] ?? estimate(step))
   }
 
   function update() {
@@ -206,6 +210,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
         tour = JSON.parse(readFileSync(path, 'utf8'))
         current = Math.max(0, Math.min(current, tour!.steps.length - 1))
         pages = tour!.steps.map(render)
+        heights = []
         void context.workspaceState.update('slick.tourIndex', current)
       }
 
@@ -298,6 +303,8 @@ function page(meta: string, body: string) {
   html, body { margin: 0; background: transparent; }
   body { padding: 4px 0 8px; font: 14px/1.6 var(--vscode-font-family); color: var(--vscode-editor-foreground); }
   .card { max-width: 72ch; padding: 10px 16px 12px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35))); border-radius: 6px; background: var(--vscode-editorWidget-background); }
+  .card { animation: in 180ms ease-out both; }
+  @keyframes in { from { opacity: 0; } }
   .meta { font-size: 12px; opacity: 0.6; }
   h1 { margin: 2px 0 6px; font-size: 16px; font-weight: 600; }
   p, ul, ol { margin: 0 0 8px; } .card > :last-child { margin-bottom: 0; }
