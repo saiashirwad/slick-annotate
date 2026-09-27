@@ -1,50 +1,31 @@
 # Tandem
 
-A VS Code extension for reading code alongside a coding agent. It provides two separate tools:
-
-- **[Annotations](#annotations)**: your notes on code, copied out as Markdown for an agent.
-- **[Tours](#tours)**: an agent's walk through code, one step at a time, with each step's code highlighted.
-
-## Annotations
-
-Notes you write on lines or whole files as you read.
-
-- **Alt+A**: annotate the selected lines, or add to the annotation you're in.
-- **Annotate File**: editor title bar, or right-click in the explorer.
-- **Copy / Clear**: Comments panel title bar.
-- Saved in `.tandem/session.json`, kept out of git.
-- Only files in the (first) workspace folder.
-- Stop the Comments panel opening on reload: `"comments.openView": "never"`.
-
-## Tours
-
-A walk through the code that an agent writes for you.
-
-- The agent writes `.tandem/tour.json` ([schema](./schemas/tour.schema.json)):
-
-  ```json
-  {
-    "title": "From request to response",
-    "steps": [
-      {
-        "title": "Where a request comes in",
-        "body": "Short Markdown explanation.",
-        "details": "Optional longer one, behind Show more.",
-        "file": "src/server.ts",
-        "quote": "exact code from the file",
-        "refs": [{ "label": "the router", "file": "src/router.ts", "quote": "export function route(" }]
-      }
-    ]
-  }
-  ```
-
-- **Tour** view in the activity bar: click a step to highlight its code.
-- **Alt+] / Alt+[**: next / previous step.
-- A `quote` must appear exactly once in its file.
-- `[route](<src/router.ts#export function route(>)` links to code.
-- Mermaid diagrams work.
+- A VS Code extension for reading code with a coding agent.
+- Write annotations on code and copy them into your next prompt.
+- Follow agent-written tours, with each step linked to the code.
 
 ## Install
 
-1. Clone, then `npm install`.
-2. **Developer: Install Extension from Location…** → pick the folder.
+- Clone the repository and run `npm install`.
+- Run **Developer: Install Extension from Location…** and select the folder.
+
+## Annotations
+
+- Select code and press **Alt+A** to write an annotation. With nothing selected, press it inside an existing thread to add to it.
+- Use **Annotate File** in the editor title bar or explorer context menu for an annotation about the whole file.
+- Browse your annotations in VS Code's **Comments** panel.
+- **Copy Tandem Session** copies your annotations with file paths and code snippets, ready to paste into an agent.
+- **Clear Tandem Session** deletes every annotation. Copy and Clear are in the Comments panel title bar and command palette.
+
+## Tours
+
+- Have your agent write a tour to `.tandem/tour.json` using the [tour format](./TOURS.md).
+- Open **Tour** in the activity bar.
+- Click a step to open its file and highlight its code.
+- Use **Alt+] / Alt+[** to move between steps.
+- Your place is remembered when you leave and come back.
+
+## Workspace
+
+- Annotations are saved in `.tandem/session.json`; tours live in `.tandem/tour.json`. The folder is excluded from git.
+- Multi-root workspaces use the first folder. Only files inside it can be annotated.
