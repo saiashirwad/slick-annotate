@@ -19,6 +19,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   let forced = false
   let revision = 0
   const changed = new vscode.EventEmitter<void>()
+  const lensesChanged = new vscode.EventEmitter<void>()
 
   const decoration = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
@@ -44,6 +45,8 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   })
 
   function decorate() {
+    lensesChanged.fire()
+
     for (const editor of vscode.window.visibleTextEditors) {
       editor.setDecorations(decoration, place?.uri.toString() === editor.document.uri.toString() ? [place.range] : [])
     }
@@ -203,17 +206,32 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     decoration, view, changed, watcher,
     watcher.onDidCreate(reload), watcher.onDidChange(reload), watcher.onDidDelete(reload),
     vscode.languages.registerHoverProvider({ scheme: 'file' }, {
-      provideHover: (document, position) => {
+      // Only answers when the tour asks, so the popup never reappears just because the mouse passed over the code.
+      provideHover: () => {
         const step = active ? tour?.steps[current] : undefined
-        const here = place?.uri.toString() === document.uri.toString() && place.range.contains(position)
 
-        if (!step || !(forced || here)) return
+        if (!step || !forced) return
         forced = false
-        const text = new vscode.MarkdownString(`Step ${current + 1} of ${tour!.steps.length}\n\n#### ${step.title}\n\n${step.body}`)
 
-        return new vscode.Hover(text, here ? place!.range : undefined)
+        return new vscode.Hover(new vscode.MarkdownString(`Step ${current + 1} of ${tour!.steps.length}\n\n#### ${step.title}\n\n${step.body}`))
       },
     }),
+    // A clickable line above the current step that brings its text back.
+    vscode.languages.registerCodeLensProvider({ scheme: 'file' }, {
+      onDidChangeCodeLenses: lensesChanged.event,
+      provideCodeLenses: (document) => {
+        const step = active ? tour?.steps[current] : undefined
+
+        if (!step || !place || place.uri.toString() !== document.uri.toString()) return []
+
+        return [new vscode.CodeLens(place.range, {
+          title: `$(comment-discussion) Step ${current + 1} of ${tour!.steps.length}: ${step.title}`,
+          command: 'slick.tourCurrent',
+          tooltip: 'Show this step again',
+        })]
+      },
+    }),
+    lensesChanged,
     vscode.window.onDidChangeVisibleTextEditors(decorate),
     vscode.workspace.onDidChangeTextDocument(({ document }) => {
       if (place?.uri.toString() === document.uri.toString()) void show(false)
