@@ -53,11 +53,17 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     decorate()
   }
 
-  // Renders with VS Code's own Markdown engine, then resizes the panel to fit once the webview has measured it.
-  async function showCard(editor: vscode.TextEditor, line: number, step: Step) {
+  // Rendered by VS Code's own Markdown engine, started before the file opens so the two overlap.
+  function render(step: Step) {
+    const meta = `Step ${current + 1} of ${tour!.steps.length}`
+
+    return Promise.resolve(vscode.commands.executeCommand<string>('markdown.api.render', `# ${step.title}\n\n${step.body}`))
+      .then((body) => page(meta, body))
+  }
+
+  // Opens at an estimated height; the webview measures itself and the panel is rebuilt only if the text overflows.
+  function showCard(editor: vscode.TextEditor, line: number, html: string, step: Step) {
     card?.dispose()
-    const meta = `${current + 1}/${tour!.steps.length} · ${tour!.title}`
-    const html = page(meta, await vscode.commands.executeCommand<string>('markdown.api.render', `# ${step.title}\n\n${step.body}`))
 
     const open = (height: number) => {
       const inset = vscode.window.createWebviewTextEditorInset(editor, line, height, { enableScripts: true })
@@ -66,7 +72,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       inset.webview.onDidReceiveMessage((pixels: number) => {
         const fitted = Math.ceil(pixels / lineHeight())
 
-        if (inset !== card || fitted === height) return
+        if (inset !== card || fitted <= height) return
         inset.dispose()
         card = open(fitted)
       })
@@ -74,7 +80,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       return inset
     }
 
-    card = open(Math.min(12, 4 + Math.ceil(step.body.length / 90)))
+    card = open(estimate(step))
   }
 
   function update() {
@@ -103,11 +109,12 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       if (!step.file) {
         const editor = vscode.window.activeTextEditor
 
-        if (navigate && editor) await showCard(editor, 0, step)
+        if (navigate && editor) showCard(editor, 0, await render(step), step)
 
         return
       }
 
+      const html = navigate ? render(step) : undefined
       const uri = vscode.Uri.joinPath(folder.uri, step.file)
       const document = await vscode.workspace.openTextDocument(uri)
 
@@ -126,7 +133,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
       decorate()
 
-      if (!navigate) return
+      if (!html) return
       const editor = await vscode.window.showTextDocument(document)
 
       if (version !== revision) return
@@ -138,7 +145,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       }
 
       // Insets count lines from 1, so this sits just under the step's last line.
-      await showCard(editor, place ? place.range.end.line + 1 : 0, step)
+      showCard(editor, place ? place.range.end.line + 1 : 0, await html, step)
     } catch (error) {
       if (version === revision) view.message = `Cannot open this step: ${String(error)}`
     }
@@ -196,6 +203,14 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   reload()
 }
 
+// Card height in editor lines, from the same metrics as the CSS below: roughly 80 characters per text line.
+function estimate(step: Step) {
+  const lines = step.body.split(/\n\s*\n/).reduce((sum, paragraph) => sum + Math.ceil(paragraph.length / 80), 0)
+  const pixels = 12 + 20 + 30 + lines * 22.4 + 8 * step.body.split(/\n\s*\n/).length + 22
+
+  return Math.ceil(pixels / lineHeight())
+}
+
 // Pixels per editor line, following VS Code's rules for `editor.lineHeight`.
 function lineHeight() {
   const config = vscode.workspace.getConfiguration('editor')
@@ -216,7 +231,7 @@ function page(meta: string, body: string) {
 <style>
   html, body { margin: 0; background: transparent; }
   body { padding: 4px 0 8px; font: 14px/1.6 var(--vscode-font-family); color: var(--vscode-editor-foreground); }
-  .card { max-width: 72ch; padding: 10px 16px 12px; border-left: 3px solid var(--vscode-focusBorder); border-radius: 6px; background: var(--vscode-editorWidget-background); }
+  .card { max-width: 72ch; padding: 10px 16px 12px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35))); border-radius: 6px; background: var(--vscode-editorWidget-background); }
   .meta { font-size: 12px; opacity: 0.6; }
   h1 { margin: 2px 0 6px; font-size: 16px; font-weight: 600; }
   p, ul, ol { margin: 0 0 8px; } .card > :last-child { margin-bottom: 0; }
