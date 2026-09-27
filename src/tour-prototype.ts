@@ -85,13 +85,13 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     }
   }
 
-  function go(index: number, scroll = true) {
+  function go(index: number) {
     if (!tour?.steps.length) return
     current = Math.max(0, Math.min(index, tour.steps.length - 1))
     active = true
     void context.workspaceState.update('slick.tourIndex', current)
     void context.workspaceState.update('slick.tourEnded', false)
-    void show(true, scroll)
+    void show(true, false)
   }
 
   async function reload() {
@@ -229,13 +229,22 @@ ${diagrams ? `<script nonce="${nonce}" src="${webview.asWebviewUri(vscode.Uri.jo
     vscode.postMessage({ go: Number(section.dataset.i) })
   })
 
+  // The newly opened step stays where it was on screen; the page only scrolls if the step doesn't fit.
   window.addEventListener('message', ({ data }) => {
-    for (const section of document.querySelectorAll('section')) {
-      const current = Number(section.dataset.i) === data.current
-      section.classList.toggle('current', current)
+    const sections = [...document.querySelectorAll('section')]
+    const target = sections.find((section) => Number(section.dataset.i) === data.current)
+    const before = target?.getBoundingClientRect().top
 
-      if (current && data.scroll) section.scrollIntoView({ block: 'start', behavior: 'smooth' })
-    }
+    for (const section of sections) section.classList.toggle('current', section === target)
+
+    if (!target) return
+
+    if (data.scroll) return target.scrollIntoView({ block: 'start' })
+    window.scrollBy(0, target.getBoundingClientRect().top - before)
+    const { top, bottom, height } = target.getBoundingClientRect()
+
+    if (top < 0 || height > innerHeight) target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    else if (bottom > innerHeight) window.scrollBy({ top: bottom - innerHeight + 8, behavior: 'smooth' })
   })
 
   for (const code of document.querySelectorAll('code.language-mermaid')) {
