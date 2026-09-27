@@ -18,7 +18,7 @@ Terms are defined in [CONTEXT.md](./CONTEXT.md).
 ## The session
 
 - There is one session. Every annotation belongs to it.
-- It lives in `.slick/session.json` in the workspace. The extension adds `.slick/` to `.git/info/exclude`, so it never shows up in git and no tracked file is touched.
+- It lives in `.slick/session.json` in the workspace. The extension adds `.slick/` to `.git/info/exclude` when it first saves a session or loads a tour, so neither shows up in git and no tracked file is touched.
 - **Clear session** deletes every annotation.
 - VS Code's built-in Comments panel lists the threads; clicking one jumps to it.
 

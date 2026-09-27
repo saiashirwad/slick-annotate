@@ -5,10 +5,8 @@ import { format } from './copy.ts'
 import { load, save, type Annotation, type Range } from './session.ts'
 import { wholeLines } from './lines.ts'
 
-// The comment shown for each annotation. VS Code passes these same objects back to comment commands.
 const annotationOf = new WeakMap<vscode.Comment, Annotation>()
 
-// Annotations as native comment threads, saved to `.slick/session.json` and copied out as Markdown.
 export function activateAnnotations(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder) {
   const root = folder.uri.fsPath
   const session = load(root)
@@ -23,8 +21,7 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
         : [],
   }
 
-  // Threads with at least one saved annotation. Threads started from the gutter "+" are created by
-  // VS Code itself, so we only learn about them when their first annotation is saved.
+  // Threads started from the gutter "+" are created by VS Code, so they're only tracked once saved.
   const threads = new Set<vscode.CommentThread>()
 
   for (const annotations of Map.groupBy(session.annotations, (a) => a.threadId).values()) {
@@ -41,7 +38,7 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
     threads.add(thread)
   }
 
-  // The API needs a range at creation; a thread without one belongs to the whole file.
+  // The API needs a range at creation; a whole-file thread has none.
   function createThread(uri: vscode.Uri, range: vscode.Range | undefined, comments: vscode.Comment[]) {
     const thread = controller.createCommentThread(uri, range ?? new vscode.Range(0, 0, 0, 0), comments)
 
@@ -50,7 +47,6 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
     return thread
   }
 
-  // Snaps a brand-new thread to whole lines, starts tracking it, and returns its snippet.
   function begin(thread: vscode.CommentThread) {
     if (!thread.range) {
       threads.add(thread)
@@ -102,7 +98,6 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
   context.subscriptions.push(
     controller,
 
-    // Inside an existing annotation with nothing selected: add to its thread. Otherwise: start a new one.
     vscode.commands.registerCommand('slick.annotateSelection', async () => {
       const editor = vscode.window.activeTextEditor
 
@@ -126,10 +121,9 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
       if (text) annotate(existing ?? createThread(document.uri, range, []), text)
     }),
 
-    // Replies typed into a thread's own comment box, including threads started from the gutter "+".
     vscode.commands.registerCommand('slick.annotate', ({ thread, text }: vscode.CommentReply) => {
       annotate(thread, text)
-      // Collapsing hides the comment box but leaves focus in it; hand focus back to the code.
+      // Collapsing hides the comment box but leaves focus in it.
       vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
     }),
 
@@ -207,8 +201,6 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
   )
 }
 
-// A one-line input at the top of the window, focused as it opens. It stays open when focus moves away,
-// so the code can be read while writing; Escape dismisses it and returns undefined.
 function ask(title: string) {
   return vscode.window.showInputBox({ title, placeHolder: 'Annotate…', ignoreFocusOut: true })
 }

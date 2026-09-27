@@ -11,7 +11,7 @@ Annotate code as you read it in VS Code, then copy every note at once, e.g. to p
 | Slick: Copy Session       | Command palette, Comments panel         | Copies every annotation as Markdown, in the order written              |
 | Slick: Clear Session      | Command palette, Comments panel         | Deletes every annotation                                               |
 
-Annotations are saved in `.slick/session.json`, which is kept out of git via `.git/info/exclude`.
+Annotations are saved in `.slick/session.json`. The `.slick/` folder is kept out of git via `.git/info/exclude`.
 
 ## Tours
 

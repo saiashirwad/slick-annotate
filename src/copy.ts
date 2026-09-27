@@ -1,7 +1,6 @@
 import { extname } from 'node:path'
 import type { Range, Session } from './session.ts'
 
-// Every annotation in the order it was written. A thread's snippet is printed only the first time.
 export function format(session: Session) {
   const printed = new Set<string>()
 

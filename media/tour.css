@@ -1,5 +1,3 @@
-/* The tour document in the sidebar. Every colour comes from the VS Code theme. */
-
 html,
 body {
   margin: 0;
@@ -11,8 +9,7 @@ body {
   color: var(--vscode-editor-foreground);
 }
 
-/* Steps open and close independently; the focused one (`current`) has the accent border. Closed steps collapse by
-   height, not display, so diagrams can still be measured. A step's header opens and closes it. */
+/* Closed steps collapse by height, not display, so mermaid can still measure their diagrams. */
 
 section {
   margin: 0 -8px 10px;
@@ -55,14 +52,12 @@ section:not(.open) .body {
   overflow: hidden;
 }
 
-/* A step's longer explanation stays folded until "Show more", hidden by height for the same reason. */
+/* Hidden by height for the same reason. */
 
 section:not(.expanded) .details {
   height: 0;
   overflow: hidden;
 }
-
-/* A step's refs: other places worth seeing, as a row of links under its text. */
 
 .refs {
   display: flex;
@@ -170,8 +165,6 @@ section.open .collapse {
   color: var(--vscode-descriptionForeground);
 }
 
-/* The step's Markdown. */
-
 .body > :last-child {
   margin-bottom: 0;
 }
@@ -210,8 +203,6 @@ strong {
   font-weight: 600;
 }
 
-/* Links, including links to code, are underlined so they read as clickable next to plain inline code. */
-
 a {
   color: var(--vscode-textLink-foreground);
   text-decoration: underline;
@@ -232,14 +223,12 @@ a:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
 }
 
-/* Linked code is marked by the underline alone, so plain inline code keeps the tinted look to itself. */
 a code {
   padding: 0;
   color: var(--vscode-textLink-foreground);
   background: none;
 }
 
-/* On an open step the file name focuses it, taking you to its code. */
 section.open .file {
   color: var(--vscode-textLink-foreground);
   text-decoration: underline;
@@ -264,7 +253,6 @@ blockquote > :last-child {
   margin-bottom: 0;
 }
 
-/* Inline code: near body size, an accent between the link colour and the text, on a tint of the same hue. */
 code {
   padding: 0.15em 0.35em;
   border-radius: 4px;
@@ -319,8 +307,6 @@ tr:nth-child(even) td {
   max-width: 100%;
   height: auto;
 }
-
-/* Syntax colours for fenced code, borrowed from the theme's symbol colours. */
 
 .hljs-keyword,
 .hljs-built_in {

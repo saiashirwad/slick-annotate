@@ -1,33 +1,27 @@
 import * as vscode from 'vscode'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { excludeFromGit } from './git.ts'
 import { wholeLines } from './lines.ts'
 
-// `body` is the short explanation shown when the step opens; `details` is the longer one behind "Show more".
-// `refs` are other places worth seeing alongside the step's own code.
 type Step = { title: string; body: string; details?: string; file?: string; quote?: string; refs?: Ref[] }
 
 type Ref = { file: string; quote?: string; label?: string }
 
 type Tour = { title: string; steps: Step[] }
 
-// The messages between this module and the document's script, media/tour.js.
-// To the page: which step is focused (-1 for none), and whether to jump to it instead of keeping it where it is.
+// Messages to and from media/tour.js. `current` is -1 when no step is focused.
 type ToPage = { current: number; jump: boolean }
 
-// From the page: focus a step, drop focus, open a link to code, or say it has (re)loaded.
 type FromPage = { go?: number; unfocus?: boolean; open?: string; ready?: boolean }
 
-// Plays `.slick/tour.json`: the whole tour as a document in the sidebar, with the current step's code highlighted.
 export function activateTour(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder) {
   const path = join(folder.uri.fsPath, '.slick', 'tour.json')
   const root = context.extensionUri
   let tour: Tour | undefined
   let problem: string | undefined
-  // Each step as HTML for the document, rendered once per load.
   let sections: string[] = []
   let current = context.workspaceState.get('slick.tourStep', 0)
-  // Whether `current` is focused: its code highlighted. Closing it in the document unfocuses it.
   let focused = context.workspaceState.get('slick.tourFocused', true)
   let place: { uri: vscode.Uri; range: vscode.Range } | undefined
   let view: vscode.WebviewView | undefined
@@ -51,7 +45,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     view.webview.html = page(view.webview, root, sections, problem)
   }
 
-  // Tells the document and the keybindings which step is focused.
   function mark(jump: boolean) {
     const count = tour?.steps.length ?? 0
     const shown = count > 0 && focused
@@ -63,7 +56,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     if (view) view.description = shown ? `${current + 1} of ${count}` : undefined
   }
 
-  // Highlights the current step's code; `reveal` also opens it in the editor.
   async function show(reveal: boolean) {
     const version = ++revision
     place = undefined
@@ -92,7 +84,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     }
   }
 
-  // Opens a place the text links to, `file` or `file#quote`, selecting the quote if it occurs exactly once.
   async function open(target: string) {
     const [file = '', quote] = target.split(/#(.*)/s)
 
@@ -105,7 +96,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     }
   }
 
-  // Sets which step is current, kept within the tour, and remembers it with whether it's focused.
   function remember(index: number) {
     current = Math.max(0, Math.min(index, (tour?.steps.length ?? 1) - 1))
     void context.workspaceState.update('slick.tourStep', current)
@@ -133,11 +123,9 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     if (answer !== 'Delete') return
     focused = true
     remember(0)
-    // The watcher sees the file go and reloads.
     rmSync(path, { force: true })
   }
 
-  // Reads and renders the tour first, then swaps it in, so nothing ever sees a tour without its HTML.
   async function load() {
     let next: Tour | undefined
     let html: string[] = []
@@ -154,6 +142,8 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
     tour = next
     sections = html
+
+    if (tour) excludeFromGit(folder.uri.fsPath)
     remember(current)
 
     draw()
@@ -180,7 +170,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     watcher.onDidChange(load),
     watcher.onDidDelete(load),
 
-    // Kept alive while hidden, so switching back to it is instant.
     vscode.window.registerWebviewViewProvider(
       'slick.tour',
       {
@@ -198,7 +187,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
     vscode.window.onDidChangeVisibleTextEditors(decorate),
 
-    // Edits can move the quoted code, so find it again.
     vscode.workspace.onDidChangeTextDocument(({ document }) => {
       if (place?.uri.toString() === document.uri.toString()) void show(false)
     }),
@@ -213,7 +201,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   void load()
 }
 
-// The whole lines covering `quote`, if it occurs exactly once in the document.
 function locate(document: vscode.TextDocument, quote: string) {
   const text = document.getText()
   const start = text.indexOf(quote)
@@ -225,7 +212,7 @@ function locate(document: vscode.TextDocument, quote: string) {
 
 const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
 
-// Markdown to HTML with VS Code's own engine, which also turns mermaid fences into `.mermaid` elements.
+// VS Code's engine, which also turns mermaid fences into `.mermaid` elements.
 const markdown = (text: string) => vscode.commands.executeCommand<string>('markdown.api.render', text)
 
 async function section(step: Step, index: number) {
@@ -241,7 +228,6 @@ async function section(step: Step, index: number) {
 </section>`
 }
 
-// A ref is the same kind of link the text can hold: `file#quote`.
 function link({ file, quote, label }: Ref) {
   const href = quote ? `${file}#${encodeURIComponent(quote)}` : file
 
