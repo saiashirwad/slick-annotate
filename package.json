@@ -22,9 +22,9 @@
       "properties": {
         "slick.tourCard": {
           "type": "string",
-          "enum": ["hover", "inset"],
+          "enum": ["hover", "inset", "comment"],
           "default": "hover",
-          "description": "Prototype: show a tour step's text in VS Code's hover popup, or in an inline web panel."
+          "description": "Prototype: show a tour step's text in VS Code's hover popup, an inline web panel, or a comment thread."
         }
       }
     },

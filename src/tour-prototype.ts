@@ -17,6 +17,8 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   // The current step's text, in a small web panel inserted between lines of code (proposed `editorInsets`).
   let card: vscode.WebviewEditorInset | undefined
   let forced = false
+  let thread: vscode.CommentThread | undefined
+  const controller = vscode.comments.createCommentController('slick-tour', 'Slick Tour')
   let revision = 0
   const changed = new vscode.EventEmitter<void>()
   const lensesChanged = new vscode.EventEmitter<void>()
@@ -70,8 +72,22 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   // Opens at an estimated height; the webview measures itself and the panel is rebuilt only if the text overflows.
   function showCard(editor: vscode.TextEditor, line: number, html: string, step: Step) {
     card?.dispose()
+    const style = vscode.workspace.getConfiguration('slick').get('tourCard')
 
-    if (vscode.workspace.getConfiguration('slick').get('tourCard') === 'hover') {
+    if (style === 'comment') {
+      // VS Code's own comment widget, as in the first prototype, with the title shown once.
+      const comment: vscode.Comment = { author: { name: 'Tour' }, body: new vscode.MarkdownString(step.body), mode: vscode.CommentMode.Preview }
+      thread = controller.createCommentThread(editor.document.uri, place?.range ?? new vscode.Range(0, 0, 0, 0), [comment])
+
+      if (!place) thread.range = undefined
+      thread.canReply = false
+      thread.label = `Step ${current + 1} of ${tour!.steps.length} · ${step.title}`
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded
+
+      return
+    }
+
+    if (style === 'hover') {
       // VS Code's own hover, drawn instantly. The provider below answers for this one request, wherever the cursor is.
       // The hover opens at the cursor and closes on scroll, so place and reveal first.
       if (place) {
@@ -117,6 +133,8 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     if (navigate || !active) {
       card?.dispose()
       card = undefined
+      thread?.dispose()
+      thread = undefined
     }
 
     clear()
@@ -231,7 +249,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
         })]
       },
     }),
-    lensesChanged,
+    lensesChanged, controller,
     vscode.window.onDidChangeVisibleTextEditors(decorate),
     vscode.workspace.onDidChangeTextDocument(({ document }) => {
       if (place?.uri.toString() === document.uri.toString()) void show(false)
