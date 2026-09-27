@@ -122,12 +122,15 @@ section.current .number {
   background: var(--vscode-badge-background);
 }
 
-/* Collapses an open step: a small chevron at the end of its header. */
+/* Collapses an open step: a small chevron at the end of its header. The negative margin lets its hover square be
+   larger than the 18px header line without making the line taller. */
 .collapse {
   display: none;
+  align-items: center;
+  justify-content: center;
   width: 22px;
   height: 22px;
-  margin-left: auto;
+  margin: -2px -4px -2px auto;
   padding: 0;
   border: none;
   border-radius: 4px;
@@ -136,19 +139,19 @@ section.current .number {
   cursor: pointer;
 }
 
+/* An up chevron drawn as a rotated corner; nudged down so its visual centre, not its box, sits on the line's centre. */
 .collapse::before {
   content: '';
-  display: block;
   width: 6px;
   height: 6px;
-  margin: 9px auto 0;
+  margin-top: 3px;
   border-top: 1.5px solid currentColor;
   border-left: 1.5px solid currentColor;
   transform: rotate(45deg);
 }
 
 section.open .collapse {
-  display: block;
+  display: flex;
 }
 
 .collapse:hover {
