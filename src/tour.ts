@@ -261,13 +261,14 @@ const markdown = (text: string) => vscode.commands.executeCommand<string>('markd
 async function section(step: Step, index: number) {
   const file = step.file ? `<button class="file">${escape(step.file)}</button>` : ''
   const refs = step.refs?.length ? `<div class="refs">${step.refs.map(link).join('')}</div>` : ''
-  const details = step.details ? `<div class="details">${await markdown(step.details)}</div>` : ''
+  const [body, rendered] = await Promise.all([markdown(step.body), step.details && markdown(step.details)])
+  const details = rendered ? `<div class="details">${rendered}</div>` : ''
   const more = details && '<button class="more">Show more</button>'
 
   return `<section data-index="${index}">
   <div class="meta"><span class="number">${index + 1}</span>${file}<button class="collapse" title="Collapse"></button></div>
   <h2>${escape(step.title)}</h2>
-  <div class="body">${await markdown(step.body)}${refs}${details}${more}</div>
+  <div class="body">${body}${refs}${details}${more}</div>
 </section>`
 }
 

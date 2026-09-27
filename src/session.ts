@@ -32,8 +32,7 @@ export function load(root: string): Session {
 
 export function save(root: string, session: Session) {
   const path = sessionPath(root)
-
-  if (!existsSync(path)) excludeFromGit(root)
+  excludeFromGit(root)
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, JSON.stringify(session, null, 2) + '\n')
 }
