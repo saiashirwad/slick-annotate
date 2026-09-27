@@ -53,9 +53,11 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     decorate()
   }
 
-  // Rendered by VS Code's own Markdown engine, started before the file opens so the two overlap.
-  function render(step: Step) {
-    const meta = `Step ${current + 1} of ${tour!.steps.length}`
+  // Every step's card, rendered by VS Code's own Markdown engine as soon as the tour loads, so moving is instant.
+  let pages: Promise<string>[] = []
+
+  function render(step: Step, index: number) {
+    const meta = `Step ${index + 1} of ${tour!.steps.length}`
 
     return Promise.resolve(vscode.commands.executeCommand<string>('markdown.api.render', `# ${step.title}\n\n${step.body}`))
       .then((body) => page(meta, body))
@@ -109,12 +111,12 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       if (!step.file) {
         const editor = vscode.window.activeTextEditor
 
-        if (navigate && editor) showCard(editor, 0, await render(step), step)
+        if (navigate && editor) showCard(editor, 0, await pages[current], step)
 
         return
       }
 
-      const html = navigate ? render(step) : undefined
+      const html = navigate ? await pages[current] : undefined
       const uri = vscode.Uri.joinPath(folder.uri, step.file)
       const document = await vscode.workspace.openTextDocument(uri)
 
@@ -137,15 +139,14 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       const editor = await vscode.window.showTextDocument(document)
 
       if (version !== revision) return
+      // Reserve the card's space in the same tick the file opens, so the code never jumps. Insets count lines from 1.
+      showCard(editor, place ? place.range.end.line + 1 : 0, html, step)
 
       if (place) {
         editor.selection = new vscode.Selection(place.range.start, place.range.start)
         editor.revealRange(place.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
         decorate()
       }
-
-      // Insets count lines from 1, so this sits just under the step's last line.
-      showCard(editor, place ? place.range.end.line + 1 : 0, await html, step)
     } catch (error) {
       if (version === revision) view.message = `Cannot open this step: ${String(error)}`
     }
@@ -168,6 +169,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
         // Like session.json, this hand-authored prototype input assumes the documented shape.
         tour = JSON.parse(readFileSync(path, 'utf8'))
         current = Math.max(0, Math.min(current, tour!.steps.length - 1))
+        pages = tour!.steps.map(render)
         void context.workspaceState.update('slick.tourIndex', current)
       }
 
@@ -233,8 +235,6 @@ function page(meta: string, body: string) {
   html, body { margin: 0; background: transparent; }
   body { padding: 4px 0 8px; font: 14px/1.6 var(--vscode-font-family); color: var(--vscode-editor-foreground); }
   .card { max-width: 72ch; padding: 10px 16px 12px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35))); border-radius: 6px; background: var(--vscode-editorWidget-background); }
-  .card { animation: in 140ms ease-out; }
-  @keyframes in { from { opacity: 0; transform: translateY(-2px); } }
   .meta { font-size: 12px; opacity: 0.6; }
   h1 { margin: 2px 0 6px; font-size: 16px; font-weight: 600; }
   p, ul, ol { margin: 0 0 8px; } .card > :last-child { margin-bottom: 0; }
