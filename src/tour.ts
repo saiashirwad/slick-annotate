@@ -1,6 +1,7 @@
 import * as vscode from 'vscode'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { wholeLines } from './lines.ts'
 
 // `body` is the short explanation shown when the step opens; `details` is the longer one behind "Show more".
 // `refs` are other places worth seeing alongside the step's own code.
@@ -9,6 +10,13 @@ type Step = { title: string; body: string; details?: string; file?: string; quot
 type Ref = { file: string; quote?: string; label?: string }
 
 type Tour = { title: string; steps: Step[] }
+
+// The messages between this module and the document's script, media/tour.js.
+// To the page: which step is focused (-1 for none), and whether to jump to it instead of keeping it where it is.
+type ToPage = { current: number; jump: boolean }
+
+// From the page: focus a step, drop focus, open a link to code, or say it has (re)loaded.
+type FromPage = { go?: number; unfocus?: boolean; open?: string; ready?: boolean }
 
 // Plays `.slick/tour.json`: the whole tour as a document in the sidebar, with the current step's code highlighted.
 export function activateTour(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder) {
@@ -50,7 +58,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     void vscode.commands.executeCommand('setContext', 'slick.tourLoaded', !!tour)
     void vscode.commands.executeCommand('setContext', 'slick.tourActive', count > 0)
     void vscode.commands.executeCommand('setContext', 'slick.tourFocused', shown)
-    void view?.webview.postMessage({ current: shown ? current : -1, jump })
+    void view?.webview.postMessage({ current: shown ? current : -1, jump } satisfies ToPage)
 
     if (view) view.description = shown ? `${current + 1} of ${count}` : undefined
   }
@@ -97,19 +105,24 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     }
   }
 
+  // Sets which step is current, kept within the tour, and remembers it with whether it's focused.
+  function remember(index: number) {
+    current = Math.max(0, Math.min(index, (tour?.steps.length ?? 1) - 1))
+    void context.workspaceState.update('slick.tourStep', current)
+    void context.workspaceState.update('slick.tourFocused', focused)
+  }
+
   function go(index: number) {
     if (!tour?.steps.length) return
-    current = Math.max(0, Math.min(index, tour.steps.length - 1))
     focused = true
-    void context.workspaceState.update('slick.tourStep', current)
-    void context.workspaceState.update('slick.tourFocused', true)
+    remember(index)
     mark(false)
     void show(true)
   }
 
   function unfocus() {
     focused = false
-    void context.workspaceState.update('slick.tourFocused', false)
+    remember(current)
     mark(false)
     void show(false)
   }
@@ -118,10 +131,8 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     const answer = await vscode.window.showWarningMessage('Delete the tour?', { modal: true }, 'Delete')
 
     if (answer !== 'Delete') return
-    current = 0
     focused = true
-    void context.workspaceState.update('slick.tourStep', 0)
-    void context.workspaceState.update('slick.tourFocused', true)
+    remember(0)
     // The watcher sees the file go and reloads.
     rmSync(path, { force: true })
   }
@@ -143,15 +154,14 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
     tour = next
     sections = html
-    current = Math.max(0, Math.min(current, (tour?.steps.length ?? 1) - 1))
+    remember(current)
 
     draw()
     mark(true)
     void show(false)
   }
 
-  // What the document asks for: focus a step, drop focus, open a link to code, or say it has (re)loaded.
-  function receive(message: { go?: number; unfocus?: boolean; open?: string; ready?: boolean }) {
+  function receive(message: FromPage) {
     if (message.go !== undefined) go(message.go)
 
     if (message.unfocus) unfocus()
@@ -209,12 +219,8 @@ function locate(document: vscode.TextDocument, quote: string) {
   const start = text.indexOf(quote)
 
   if (start === -1 || text.indexOf(quote, start + 1) !== -1) return
-  const first = document.positionAt(start).line
-  const end = document.positionAt(start + quote.length)
-  // A quote ending with a newline stops at column 0 of the next line, which it doesn't include.
-  const last = end.character === 0 && end.line > first ? end.line - 1 : end.line
 
-  return new vscode.Range(first, 0, last, document.lineAt(last).range.end.character)
+  return wholeLines(document, new vscode.Range(document.positionAt(start), document.positionAt(start + quote.length)))
 }
 
 const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)

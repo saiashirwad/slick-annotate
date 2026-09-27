@@ -1,5 +1,6 @@
 // The tour document in the sidebar. Any number of steps can be open; one of them, at most, is focused (its code is
-// highlighted). The extension decides which step is focused and tells this page.
+// highlighted). The extension decides which step is focused and tells this page. The messages both ways are typed in
+// src/tour.ts (`ToPage`, `FromPage`).
 const vscode = acquireVsCodeApi()
 
 const sections = [...document.querySelectorAll('section')]
