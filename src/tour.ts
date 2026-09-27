@@ -229,7 +229,7 @@ async function section(step: Step, index: number) {
   const more = details && '<button class="more">Show more</button>'
 
   return `<section data-index="${index}">
-  <div class="meta"><span class="number">${index + 1}</span>${file}</div>
+  <div class="meta"><span class="number">${index + 1}</span>${file}<button class="collapse" title="Collapse"></button></div>
   <h2>${escape(step.title)}</h2>
   <div class="body">${await markdown(step.body)}${refs}${details}${more}</div>
 </section>`

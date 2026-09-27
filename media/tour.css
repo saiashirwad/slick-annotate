@@ -122,6 +122,40 @@ section.current .number {
   background: var(--vscode-badge-background);
 }
 
+/* Collapses an open step: a small chevron at the end of its header. */
+.collapse {
+  display: none;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  color: var(--vscode-descriptionForeground);
+  background: none;
+  cursor: pointer;
+}
+
+.collapse::before {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 6px;
+  margin: 9px auto 0;
+  border-top: 1.5px solid currentColor;
+  border-left: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+section.open .collapse {
+  display: block;
+}
+
+.collapse:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
 .file {
   font-family: var(--vscode-editor-font-family);
   overflow: hidden;

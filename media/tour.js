@@ -50,15 +50,20 @@ document.addEventListener('click', (event) => {
     return
   }
 
-  // Clicking an open step's header closes it, dropping focus if it had it. Any other click focuses the step (and
-  // opens it), except in the text of the step that's already focused, so reading never pulls the editor back.
   const current = section.classList.contains('current')
 
-  if (section.classList.contains('open') && event.target.closest('.meta, h2')) {
+  // The collapse button closes a step, dropping focus if it had it.
+  if (event.target.closest('.collapse')) {
     setOpen(section, false)
 
     if (current) vscode.postMessage({ unfocus: true })
-  } else if (!current) {
+
+    return
+  }
+
+  // Any other click focuses the step (opening it if closed), except in the step that's already focused, so reading
+  // never pulls the editor back.
+  if (!current) {
     setOpen(section, true)
     vscode.postMessage({ go: indexOf(section) })
   }
