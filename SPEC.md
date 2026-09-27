@@ -37,12 +37,12 @@ Nothing else is added. You write the prompt around it when you paste.
 A tour is written by a coding agent to `.slick/tour.json`: a title and an ordered list of steps. Each step has a title, a short Markdown `body`, and optionally longer `details`, a `file` and a `quote` of code from it. Mermaid diagrams work in both body and details.
 
 - There is one tour. Writing the file replaces it, and the view reloads.
-- The **Tour** view in the activity bar shows the whole tour as one document. Only the current step is open; the others collapse to their number, file and title.
-- Clicking a step, Alt+] or Alt+[ makes it current: its code opens and its whole lines are highlighted. Focus stays where it was. The step opens in place, and the document only scrolls if the step doesn't fit.
+- The **Tour** view in the activity bar shows the whole tour as one document. Steps open and close independently by clicking their header (number, file, title); closed steps show just that header. Clicking in a step's text does nothing.
+- At most one step is **focused**: its code opens and its whole lines are highlighted, and it has the accent border. Opening a closed step focuses it, as do clicking an open step's file name and Alt+] / Alt+[ (which also open it). Closing the focused step unfocuses it. Keyboard focus stays where it was. The focused step stays in place on screen, and the document only scrolls if it doesn't fit.
 - A quote must appear exactly once in its file. There are no line numbers, so edits elsewhere never move a step. If the quote isn't found, or appears more than once, the file opens with nothing highlighted.
 - An open step shows its body; **Show more** unfolds its details.
-- Text can link to code: a Markdown link to `path/to/file` opens the file, and `path/to/file#quoted code` also selects the quote (again only if it occurs exactly once). A step's `refs` (`file`, optional `quote` and `label`) are the same links, shown as small chips under its body: other places worth seeing alongside the step's own code. Links to code never change the current step.
-- The current step survives reloads. **End tour** removes the highlight until you pick a step again. **Clear tour** deletes the tour file.
+- Text can link to code: a Markdown link to `path/to/file` opens the file, and `path/to/file#quoted code` also selects the quote (again only if it occurs exactly once). A step's `refs` (`file`, optional `quote` and `label`) are the same links, shown as small chips under its body: other places worth seeing alongside the step's own code. Links to code never change the focused step.
+- The focused step survives reloads, and which steps are open survives the view being hidden. **Unfocus step** removes the highlight. **Clear tour** deletes the tour file.
 - The highlight colour is its own theme colour, `slick.tourHighlight`, so it can't be mistaken for search matches.
 - Tours are separate from annotations: Copy and Clear session don't touch them.
 
@@ -57,7 +57,7 @@ A tour is written by a coding agent to `.slick/tour.json`: a title and an ordere
 | Next step          | Alt+], Tour view title bar              |
 | Previous step      | Alt+[, Tour view title bar              |
 | Go to current step | Command palette, Tour view title bar    |
-| End tour           | Command palette, Tour view title bar    |
+| Unfocus step       | Command palette, Tour view title bar    |
 | Clear tour         | Command palette, Tour view "…" menu     |
 
 ## Implementation notes

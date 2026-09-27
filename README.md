@@ -33,14 +33,14 @@ A coding agent can walk you through code by writing `.slick/tour.json`:
 }
 ```
 
-The **Tour** view in the activity bar shows the whole tour as one document, with only the current step open. Clicking a step or pressing Alt+] / Alt+[ highlights its code. A step's `quote` must appear exactly once in its `file`; otherwise the file opens with nothing highlighted. Links in the text open code too: `[the router](src/router.ts)` opens a file, and `[route](<src/router.ts#export function route(>)` also selects that quoted code. `refs` are the same links, shown under the step's text. The highlight colour is `slick.tourHighlight`, which you can change in `workbench.colorCustomizations`.
+The **Tour** view in the activity bar shows the whole tour as one document. Open and close steps by clicking their headers; any number can be open. One step at a time is focused, with its code highlighted: opening a step, clicking an open step's file name, or Alt+] / Alt+[ focuses it, and closing it unfocuses it. A step's `quote` must appear exactly once in its `file`; otherwise the file opens with nothing highlighted. Links in the text open code too: `[the router](src/router.ts)` opens a file, and `[route](<src/router.ts#export function route(>)` also selects that quoted code. `refs` are the same links, shown under the step's text. The highlight colour is `slick.tourHighlight`, which you can change in `workbench.colorCustomizations`.
 
 | Command                   | Where                                |
 | ------------------------- | ------------------------------------ |
 | Slick: Next Step          | Alt+], Tour view title bar           |
 | Slick: Previous Step      | Alt+[, Tour view title bar           |
 | Slick: Go to Current Step | Command palette, Tour view title bar |
-| Slick: End Tour           | Command palette, Tour view title bar |
+| Slick: Unfocus Step       | Command palette, Tour view title bar |
 | Slick: Clear Tour         | Command palette, Tour view "…" menu  |
 
 ## Install

@@ -102,11 +102,11 @@
         "enablement": "slick.tourActive"
       },
       {
-        "command": "slick.tourEnd",
-        "title": "End Tour",
+        "command": "slick.tourUnfocus",
+        "title": "Unfocus Step",
         "category": "Slick",
         "icon": "$(close)",
-        "enablement": "slick.tourActive"
+        "enablement": "slick.tourFocused"
       },
       {
         "command": "slick.tourClear",
@@ -213,9 +213,9 @@
           "when": "view == slick.tour && slick.tourActive"
         },
         {
-          "command": "slick.tourEnd",
+          "command": "slick.tourUnfocus",
           "group": "navigation@4",
-          "when": "view == slick.tour && slick.tourActive"
+          "when": "view == slick.tour && slick.tourFocused"
         },
         {
           "command": "slick.tourClear",

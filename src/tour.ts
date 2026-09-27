@@ -22,7 +22,8 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   // Each step's Markdown as HTML, rendered once per load by VS Code's own Markdown engine.
   let rendered: Rendered[] = []
   let current = context.workspaceState.get('slick.tourStep', 0)
-  let ended = context.workspaceState.get('slick.tourEnded', false)
+  // Whether `current` is focused: its code highlighted. Closing it in the document unfocuses it.
+  let focused = context.workspaceState.get('slick.tourFocused', true)
   let place: { uri: vscode.Uri; range: vscode.Range } | undefined
   let view: vscode.WebviewView | undefined
   // Bumped by every `show`, so an older one still awaiting a file gives way.
@@ -45,14 +46,15 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     view.webview.html = page(view.webview, media, mermaid, tour, rendered, problem)
   }
 
-  // Tells the document and the keybindings which step is current.
+  // Tells the document and the keybindings which step is focused.
   function mark(jump: boolean) {
-    const count = ended ? 0 : (tour?.steps.length ?? 0)
+    const count = tour?.steps.length ?? 0
     void vscode.commands.executeCommand('setContext', 'slick.tourLoaded', !!tour)
     void vscode.commands.executeCommand('setContext', 'slick.tourActive', count > 0)
-    void view?.webview.postMessage({ current: count > 0 ? current : -1, jump })
+    void vscode.commands.executeCommand('setContext', 'slick.tourFocused', count > 0 && focused)
+    void view?.webview.postMessage({ current: count > 0 && focused ? current : -1, jump })
 
-    if (view) view.description = count > 0 ? `${current + 1} of ${count}` : undefined
+    if (view) view.description = count > 0 && focused ? `${current + 1} of ${count}` : undefined
   }
 
   // Highlights the current step's code; `reveal` also opens it in the editor.
@@ -60,7 +62,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     const version = ++revision
     place = undefined
     decorate()
-    const step = ended ? undefined : tour?.steps[current]
+    const step = focused ? tour?.steps[current] : undefined
 
     if (!step?.file) return
 
@@ -100,16 +102,16 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   function go(index: number) {
     if (!tour?.steps.length) return
     current = Math.max(0, Math.min(index, tour.steps.length - 1))
-    ended = false
+    focused = true
     void context.workspaceState.update('slick.tourStep', current)
-    void context.workspaceState.update('slick.tourEnded', false)
+    void context.workspaceState.update('slick.tourFocused', true)
     mark(false)
     void show(true)
   }
 
-  function end() {
-    ended = true
-    void context.workspaceState.update('slick.tourEnded', true)
+  function unfocus() {
+    focused = false
+    void context.workspaceState.update('slick.tourFocused', false)
     mark(false)
     void show(false)
   }
@@ -119,9 +121,9 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
     if (answer !== 'Delete') return
     current = 0
-    ended = false
+    focused = true
     void context.workspaceState.update('slick.tourStep', 0)
-    void context.workspaceState.update('slick.tourEnded', false)
+    void context.workspaceState.update('slick.tourFocused', true)
     // The watcher sees the file go and reloads.
     rmSync(path, { force: true })
   }
@@ -171,13 +173,17 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
           view = resolved
           view.webview.options = { enableScripts: true, localResourceRoots: [media, mermaid] }
 
-          view.webview.onDidReceiveMessage((message: { go?: number; open?: string; ready?: boolean }) => {
-            if (message.go !== undefined) go(message.go)
+          view.webview.onDidReceiveMessage(
+            (message: { go?: number; open?: string; unfocus?: boolean; ready?: boolean }) => {
+              if (message.go !== undefined) go(message.go)
 
-            if (message.open !== undefined) void open(message.open)
+              if (message.unfocus) unfocus()
 
-            if (message.ready) mark(true)
-          })
+              if (message.open !== undefined) void open(message.open)
+
+              if (message.ready) mark(true)
+            },
+          )
 
           view.onDidDispose(() => (view = undefined))
           draw()
@@ -196,7 +202,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     vscode.commands.registerCommand('slick.tourNext', () => go(current + 1)),
     vscode.commands.registerCommand('slick.tourPrevious', () => go(current - 1)),
     vscode.commands.registerCommand('slick.tourCurrent', () => go(current)),
-    vscode.commands.registerCommand('slick.tourEnd', end),
+    vscode.commands.registerCommand('slick.tourUnfocus', unfocus),
     vscode.commands.registerCommand('slick.tourClear', clear),
   )
 

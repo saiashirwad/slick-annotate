@@ -1,11 +1,26 @@
-// The tour document in the sidebar: clicking a step goes to it, and the extension says which step is current.
+// The tour document in the sidebar. Any number of steps can be open; one of them, at most, is focused (its code is
+// highlighted). The extension decides which step is focused and tells this page.
 const vscode = acquireVsCodeApi()
+const sections = [...document.querySelectorAll('section')]
+const indexOf = (section) => Number(section.dataset.index)
+
+// Which steps are open survives the view being hidden and redrawn.
+const opened = new Set(vscode.getState()?.opened ?? [])
+for (const section of sections) section.classList.toggle('open', opened.has(indexOf(section)))
+
+function setOpen(section, open) {
+  section.classList.toggle('open', open)
+
+  if (open) opened.add(indexOf(section))
+  else opened.delete(indexOf(section))
+  vscode.setState({ opened: [...opened] })
+}
 
 document.addEventListener('click', (event) => {
   const section = event.target.closest('section')
   const more = event.target.closest('.more')
 
-  // "Show more" opens the step's longer explanation, without leaving the step.
+  // "Show more" unfolds the step's longer explanation.
   if (more) {
     more.textContent = section.classList.toggle('expanded') ? 'Show less' : 'Show more'
 
@@ -28,22 +43,35 @@ document.addEventListener('click', (event) => {
 
   if (!section || anchor || String(getSelection())) return
 
-  // A collapsed step opens when clicked anywhere. The open one only goes back to its code from its file name,
-  // so clicking around while reading doesn't pull the editor back.
-  if (section.classList.contains('current') && !event.target.closest('.file')) return
-  vscode.postMessage({ go: Number(section.dataset.index) })
+  // An open step's file name focuses it.
+  if (event.target.closest('.file') && section.classList.contains('open')) {
+    vscode.postMessage({ go: indexOf(section) })
+
+    return
+  }
+
+  // Clicking a closed step opens and focuses it. Clicking an open step's header closes it, dropping focus if it had
+  // it. Clicks in a step's text do nothing, so reading never pulls the editor around.
+  if (!section.classList.contains('open')) {
+    setOpen(section, true)
+    vscode.postMessage({ go: indexOf(section) })
+  } else if (event.target.closest('.meta, h2')) {
+    setOpen(section, false)
+
+    if (section.classList.contains('current')) vscode.postMessage({ unfocus: true })
+  }
 })
 
-// The step that opens stays where it was on screen; the page only scrolls when the step doesn't fit.
+// The focused step opens and stays where it was on screen; the page only scrolls when it doesn't fit.
 // `jump` (after a reload) puts it at the top straight away instead.
 window.addEventListener('message', ({ data }) => {
-  const sections = [...document.querySelectorAll('section')]
-  const target = sections.find((section) => Number(section.dataset.index) === data.current)
+  const target = sections.find((section) => indexOf(section) === data.current)
   const before = target?.getBoundingClientRect().top
 
   for (const section of sections) section.classList.toggle('current', section === target)
 
   if (!target) return
+  setOpen(target, true)
 
   if (data.jump) return target.scrollIntoView({ block: 'start' })
   window.scrollBy(0, target.getBoundingClientRect().top - before)

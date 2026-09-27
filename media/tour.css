@@ -11,35 +11,43 @@ body {
   color: var(--vscode-editor-foreground);
 }
 
-/* Steps: only the current one is open. Others collapse by height, not display, so diagrams can still be measured. */
+/* Steps open and close independently; the focused one (`current`) has the accent border. Closed steps collapse by
+   height, not display, so diagrams can still be measured. A step's header opens and closes it. */
 
 section {
   margin: 0 -8px 10px;
   padding: 12px 14px 14px;
   border: 1px solid transparent;
   border-radius: 6px;
+}
+
+section:not(.open) {
+  padding-bottom: 8px;
   cursor: pointer;
 }
 
-section:hover {
+section:not(.open):hover {
   background: var(--vscode-list-hoverBackground);
+}
+
+section.open .meta,
+section.open h2 {
+  cursor: pointer;
+}
+
+section.open {
+  border-color: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
 }
 
 section.current {
   border-color: color-mix(in srgb, var(--vscode-focusBorder) 70%, transparent);
-  background: none;
-  cursor: default;
 }
 
-section:not(.current) {
-  padding-bottom: 8px;
-}
-
-section:not(.current) h2 {
+section:not(.open) h2 {
   margin-bottom: 0;
 }
 
-section:not(.current) .body {
+section:not(.open) .body {
   height: 0;
   overflow: hidden;
 }
@@ -191,8 +199,8 @@ a code {
   background: none;
 }
 
-/* On the current step the file name takes you back to its code. */
-section.current .file {
+/* On an open step the file name focuses it, taking you to its code. */
+section.open .file {
   color: var(--vscode-textLink-foreground);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--vscode-textLink-foreground) 50%, transparent);
@@ -200,7 +208,7 @@ section.current .file {
   cursor: pointer;
 }
 
-section.current .file:hover {
+section.open .file:hover {
   text-decoration-color: var(--vscode-textLink-foreground);
 }
 
