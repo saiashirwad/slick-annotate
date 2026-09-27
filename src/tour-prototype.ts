@@ -176,7 +176,7 @@ function page(webview: vscode.Webview, mermaid: vscode.Uri, tour: Tour | undefin
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource};">
 <style>
   html, body { margin: 0; }
-  body { padding: 8px 12px 40vh; font: 14px/1.75 var(--vscode-font-family); color: var(--vscode-foreground); }
+  body { padding: 8px 12px 40vh; font: 14px/1.75 var(--vscode-font-family); color: var(--vscode-editor-foreground); }
   /* A comfortable line length however wide the sidebar gets. */
   .body { max-width: 68ch; }
   section { margin: 0 -8px 10px; padding: 12px 14px 14px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
@@ -199,7 +199,8 @@ function page(webview: vscode.Webview, mermaid: vscode.Uri, tour: Tour | undefin
   p, ul, ol, table { margin: 0 0 12px; }
   li + li { margin-top: 4px; }
   ul, ol { padding-left: 20px; }
-  code { font: 0.88em var(--vscode-editor-font-family); padding: 1px 5px; border-radius: 4px; color: var(--vscode-textPreformat-foreground); background: var(--vscode-textPreformat-background, color-mix(in srgb, var(--vscode-textPreformat-foreground) 12%, transparent)); }
+  /* Inline code: near body size, an accent between the link colour and the text, on a tint of the same hue. */
+  code { font-family: var(--vscode-editor-font-family); font-size: 0.93em; line-height: 1; padding: 0.15em 0.35em; border-radius: 4px; color: color-mix(in srgb, var(--vscode-textLink-foreground) 65%, var(--vscode-editor-foreground)); background: color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent); -webkit-box-decoration-break: clone; }
   pre { margin: 0 0 8px; padding: 8px 12px; border-radius: 4px; overflow-x: auto; background: var(--vscode-textCodeBlock-background); }
   pre code { padding: 0; color: inherit; background: none; }
   table { border-collapse: collapse; font-size: 13px; }
