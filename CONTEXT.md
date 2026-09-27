@@ -19,3 +19,11 @@ _Avoid_: Conversation, discussion
 **Session**:
 Every annotation written since the session was last cleared. There is only ever one.
 _Avoid_: Study session, review, batch
+
+**Tour**:
+A guided walk through part of the codebase, written by an agent to show you something. There is only ever one, and it remembers which step you're on, so you can wander off to read other code and come straight back.
+_Avoid_: Walkthrough, guide, lesson
+
+**Step**:
+One stop on a tour: at most one piece of code the agent quotes, plus what it says about it. Steps are not annotations; annotations are only ever yours.
+_Avoid_: Stop, agent annotation, agent comment
