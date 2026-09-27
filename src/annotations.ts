@@ -2,21 +2,36 @@ import * as vscode from 'vscode'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import { format } from './copy.ts'
-import { load, save, type Annotation, type Range } from './session.ts'
+import { load, save, type Annotation, type Range, type Session } from './session.ts'
 import { wholeLines } from './lines.ts'
 
 const annotationOf = new WeakMap<vscode.Comment, Annotation>()
 
 export function activateAnnotations(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder) {
   const root = folder.uri.fsPath
-  const session = load(root)
+  let session: Session
+
+  try {
+    session = load(root)
+  } catch (error) {
+    vscode.window.showWarningMessage(`Annotations are off until .tandem/session.json is fixed: ${String(error)}`)
+
+    return
+  }
+
   const persist = () => save(root, session)
 
-  const controller = vscode.comments.createCommentController('slick-annotate', 'Slick Annotate')
+  // Paths are saved relative to this folder, so files elsewhere can't be annotated.
+  const annotatable = (uri: vscode.Uri) =>
+    uri.scheme === 'file' && vscode.workspace.getWorkspaceFolder(uri)?.uri.toString() === folder.uri.toString()
+
+  const refuse = () => vscode.window.setStatusBarMessage(`Only files in ${folder.name} can be annotated`, 3000)
+
+  const controller = vscode.comments.createCommentController('tandem', 'Tandem')
   controller.options = { placeHolder: 'Annotate…' }
   controller.commentingRangeProvider = {
     provideCommentingRanges: (document) =>
-      document.uri.scheme === 'file'
+      annotatable(document.uri)
         ? [new vscode.Range(new vscode.Position(0, 0), document.lineAt(document.lineCount - 1).range.end)]
         : [],
   }
@@ -34,7 +49,7 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
       annotations.map((a) => toComment(a)),
     )
 
-    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
+    settle(thread)
     threads.add(thread)
   }
 
@@ -82,7 +97,7 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
     session.annotations.push(annotation)
     persist()
     thread.comments = [...thread.comments, toComment(annotation)]
-    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
+    settle(thread)
   }
 
   const threadOf = (comment: vscode.Comment) => [...threads].find((t) => t.comments.includes(comment))
@@ -98,11 +113,13 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
   context.subscriptions.push(
     controller,
 
-    vscode.commands.registerCommand('slick.annotateSelection', async () => {
+    vscode.commands.registerCommand('tandem.annotateSelection', async () => {
       const editor = vscode.window.activeTextEditor
 
       if (!editor) return
       const { document, selection } = editor
+
+      if (!annotatable(document.uri)) return refuse()
       const line = selection.active.line
 
       const existing = selection.isEmpty
@@ -121,16 +138,18 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
       if (text) annotate(existing ?? createThread(document.uri, range, []), text)
     }),
 
-    vscode.commands.registerCommand('slick.annotate', ({ thread, text }: vscode.CommentReply) => {
+    vscode.commands.registerCommand('tandem.annotate', ({ thread, text }: vscode.CommentReply) => {
       annotate(thread, text)
       // Collapsing hides the comment box but leaves focus in it.
       vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
     }),
 
-    vscode.commands.registerCommand('slick.annotateFile', async (uri?: vscode.Uri) => {
+    vscode.commands.registerCommand('tandem.annotateFile', async (uri?: vscode.Uri) => {
       uri ??= vscode.window.activeTextEditor?.document.uri
 
       if (!uri) return
+
+      if (!annotatable(uri)) return refuse()
       await vscode.window.showTextDocument(uri)
       const existing = [...threads].find((t) => !t.range && t.uri.toString() === uri.toString())
       const text = await ask(`${existing ? 'Add to the annotation on' : 'Annotate'} ${basename(uri.path)}`)
@@ -138,7 +157,7 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
       if (text) annotate(existing ?? createThread(uri, undefined, []), text)
     }),
 
-    vscode.commands.registerCommand('slick.copySession', async () => {
+    vscode.commands.registerCommand('tandem.copySession', async () => {
       const count = session.annotations.length
 
       if (count === 0) return vscode.window.setStatusBarMessage('No annotations to copy', 2000)
@@ -146,7 +165,7 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
       vscode.window.setStatusBarMessage(`Copied ${count} annotation${count === 1 ? '' : 's'}`, 2000)
     }),
 
-    vscode.commands.registerCommand('slick.clearSession', async () => {
+    vscode.commands.registerCommand('tandem.clearSession', async () => {
       const count = session.annotations.length
 
       if (count === 0) return vscode.window.setStatusBarMessage('No annotations to clear', 2000)
@@ -166,11 +185,11 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
       threads.clear()
     }),
 
-    vscode.commands.registerCommand('slick.editAnnotation', (comment: vscode.Comment) =>
+    vscode.commands.registerCommand('tandem.editAnnotation', (comment: vscode.Comment) =>
       setMode(comment, vscode.CommentMode.Editing),
     ),
 
-    vscode.commands.registerCommand('slick.saveAnnotation', (comment: vscode.Comment) => {
+    vscode.commands.registerCommand('tandem.saveAnnotation', (comment: vscode.Comment) => {
       const annotation = annotationOf.get(comment)
       const body = comment.body instanceof vscode.MarkdownString ? comment.body.value : comment.body
 
@@ -180,11 +199,11 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
       setMode(comment, vscode.CommentMode.Preview)
     }),
 
-    vscode.commands.registerCommand('slick.cancelEdit', (comment: vscode.Comment) =>
+    vscode.commands.registerCommand('tandem.cancelEdit', (comment: vscode.Comment) =>
       setMode(comment, vscode.CommentMode.Preview),
     ),
 
-    vscode.commands.registerCommand('slick.deleteAnnotation', (comment: vscode.Comment) => {
+    vscode.commands.registerCommand('tandem.deleteAnnotation', (comment: vscode.Comment) => {
       const thread = threadOf(comment)
       const annotation = annotationOf.get(comment)
 
@@ -200,6 +219,15 @@ export function activateAnnotations(context: vscode.ExtensionContext, folder: vs
     }),
   )
 }
+
+// A saved thread shows just its notes under where they are. Alt+A inside its lines adds to it.
+function settle(thread: vscode.CommentThread) {
+  thread.canReply = false
+  thread.label = thread.range ? capitalize(linesOf(thread.range)) : basename(thread.uri.path)
+  thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
+}
+
+const capitalize = (text: string) => text[0].toUpperCase() + text.slice(1)
 
 function ask(title: string) {
   return vscode.window.showInputBox({ title, placeHolder: 'Annotate…', ignoreFocusOut: true })

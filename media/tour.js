@@ -4,16 +4,19 @@ const sections = [...document.querySelectorAll('section')]
 
 const indexOf = (section) => Number(section.dataset.index)
 
-const opened = new Set(vscode.getState()?.opened ?? [])
+// The extension remembers which steps are open, so a new tour starts with them all closed.
+const opened = new Set(document.body.dataset.opened.split(' ').filter(Boolean).map(Number))
 
 for (const section of sections) section.classList.toggle('open', opened.has(indexOf(section)))
 
 function setOpen(section, open) {
   section.classList.toggle('open', open)
 
+  if (open === opened.has(indexOf(section))) return
+
   if (open) opened.add(indexOf(section))
   else opened.delete(indexOf(section))
-  vscode.setState({ opened: [...opened] })
+  vscode.postMessage({ opened: [...opened] })
 }
 
 document.addEventListener('click', (event) => {

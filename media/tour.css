@@ -155,7 +155,14 @@ section.open .collapse {
 }
 
 .file {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  color: inherit;
+  background: none;
   font-family: var(--vscode-editor-font-family);
+  font-size: inherit;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -163,6 +170,10 @@ section.open .collapse {
 
 .empty {
   color: var(--vscode-descriptionForeground);
+}
+
+.problem {
+  color: var(--vscode-errorForeground);
 }
 
 .body > :last-child {

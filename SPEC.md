@@ -1,6 +1,6 @@
-# Slick Annotate — Spec
+# Tandem — Spec
 
-A VS Code extension for reading code closely. You leave notes on code as you read, then copy them all out in one go, usually to paste into a coding agent. Reviewing code and learning code are the same activity here.
+A VS Code extension for reading code closely. You leave notes on code as you read, then copy them all out in one go, usually to paste into a coding agent. An agent can also write a tour of the code, which you follow step by step next to it. Reviewing code and learning code are the same activity here.
 
 It should feel like part of VS Code: native UI, your editor theme. The one custom-drawn surface is the tour document, because VS Code's native widgets proved too cramped to read in. The codebase stays tiny.
 
@@ -8,18 +8,20 @@ Terms are defined in [CONTEXT.md](./CONTEXT.md).
 
 ## Annotating
 
-- **Annotate selection** — select some code and press Alt+A: a one-line input opens at the top of the window, focused. It stays open when you click away, so you can read the code while writing; Enter saves, Escape cancels. Or click the "+" in the margin and write in the comment box; save with Cmd+Enter. The annotation covers whole lines, and those lines are saved with it as its snippet. After saving, the thread collapses to its margin icon.
+- **Annotate selection** — select some code and press Alt+A: a one-line input opens at the top of the window, focused. It stays open when you click away, so you can read the code while writing; Enter saves, Escape cancels. Or click the "+" in the margin and write in the comment box; save with Cmd+Enter. The annotation covers whole lines, and those lines are saved with it as its snippet. After saving, the thread collapses to its margin icon. Expanded, it shows just its notes under a header naming its lines (or file); there's no reply box.
 - **Add to a thread** — with nothing selected, Alt+A inside an existing annotation opens the same input, and saving adds to that thread.
 - **Annotate file** — from the editor title bar or the explorer's right-click menu. The note belongs to the whole file and shows at its top.
 - A question and its later answer sit together in one thread.
 - Any annotation can be edited or deleted. No history is kept.
 - If the code changes afterwards, nothing happens. The snippet keeps showing what you were looking at.
+- Only files inside the workspace folder can be annotated (in a multi-root workspace, the first folder). Elsewhere the margin "+" doesn't appear, and Alt+A and Annotate file say why in the status bar.
 
 ## The session
 
 - There is one session. Every annotation belongs to it.
-- It lives in `.slick/session.json` in the workspace. The extension adds `.slick/` to `.git/info/exclude` when it first saves a session or loads a tour, so neither shows up in git and no tracked file is touched.
+- It lives in `.tandem/session.json` in the workspace. The extension adds `.tandem/` to `.git/info/exclude` when it first saves a session or loads a tour, so neither shows up in git and no tracked file is touched.
 - **Clear session** deletes every annotation.
+- If `session.json` can't be read, annotations are off until it's fixed, with a warning saying why. The file is left as it is, and tours still work.
 - VS Code's built-in Comments panel lists the threads; clicking one jumps to it.
 
 ## Copying
@@ -34,31 +36,31 @@ Nothing else is added. You write the prompt around it when you paste.
 
 ## Tours
 
-A tour is written by a coding agent to `.slick/tour.json`: a title and an ordered list of steps. Each step has a title, a short Markdown `body`, and optionally longer `details`, a `file` and a `quote` of code from it. Mermaid diagrams work in both body and details.
+A tour is written by a coding agent to `.tandem/tour.json`: a title and an ordered list of steps. Each step has a title, a short Markdown `body`, and optionally longer `details`, a `file` and a `quote` of code from it. Mermaid diagrams work in both body and details. [`schemas/tour.schema.json`](./schemas/tour.schema.json) describes the file, and VS Code checks `.tandem/tour.json` against it.
 
-- There is one tour. Writing the file replaces it, and the view reloads.
+- There is one tour. Writing the file replaces it, and the view reloads. If the file can't be read, the last good tour stays, with the error above it.
 - The **Tour** view in the activity bar shows the whole tour as one document. Steps open and close independently: clicking a closed step opens it, and the chevron at the end of an open step's header collapses it. Closed steps show just their number, file and title.
-- At most one step is **focused**: its code opens and its whole lines are highlighted, and it has the accent border. Clicking any step that isn't focused focuses it (opening it if closed), as do clicking the focused step's file name and Alt+] / Alt+[. Clicking in the focused step's text does nothing, so reading never pulls the editor back. Collapsing the focused step unfocuses it. Keyboard focus stays where it was. The focused step stays in place on screen, and the document only scrolls if it doesn't fit.
-- A quote must appear exactly once in its file. There are no line numbers, so edits elsewhere never move a step. If the quote isn't found, or appears more than once, the file opens with nothing highlighted.
+- At most one step is **focused**: its code opens and its whole lines are highlighted, and it has the accent border. Clicking any step that isn't focused focuses it (opening it if closed), as do clicking the focused step's file name (a button, so it works from the keyboard too) and Alt+] / Alt+[. Clicking in the focused step's text does nothing, so reading never pulls the editor back. Collapsing the focused step unfocuses it. Keyboard focus stays where it was. The focused step stays in place on screen, and the document only scrolls if it doesn't fit.
+- A quote must appear exactly once in its file. There are no line numbers, so edits elsewhere never move a step. If the quote isn't found, or appears more than once, the file opens with nothing highlighted and the status bar says which. Editing the file so the quote is found again brings the highlight back.
 - An open step shows its body; **Show more** unfolds its details.
 - Text can link to code: a Markdown link to `path/to/file` opens the file, and `path/to/file#quoted code` also selects the quote (again only if it occurs exactly once). A step's `refs` (`file`, optional `quote` and `label`) are the same links, shown as small chips under its body: other places worth seeing alongside the step's own code. Links to code never change the focused step.
-- The focused step survives reloads, and which steps are open survives the view being hidden. **Unfocus step** removes the highlight. **Clear tour** deletes the tour file.
-- The highlight colour is its own theme colour, `slick.tourHighlight`, so it can't be mistaken for search matches.
+- Which step is focused and which are open are remembered for the tour's title. An agent can rewrite its tour and you keep your place; a tour with a new title starts at step 1 with the rest closed. **Unfocus step** removes the highlight. **Clear tour** deletes the tour file.
+- The highlight colour is its own theme colour, `tandem.tourHighlight`, so it can't be mistaken for search matches.
 - Tours are separate from annotations: Copy and Clear session don't touch them.
 
 ## Commands
 
-| Command            | Where                                   |
-| ------------------ | --------------------------------------- |
-| Annotate selection | Alt+A, margin "+"                       |
-| Annotate file      | Editor title bar, explorer context menu |
-| Copy session       | Command palette, panel title bar        |
-| Clear session      | Command palette, panel title bar        |
-| Next step          | Alt+], Tour view title bar              |
-| Previous step      | Alt+[, Tour view title bar              |
-| Go to current step | Command palette, Tour view title bar    |
-| Unfocus step       | Command palette, Tour view title bar    |
-| Clear tour         | Command palette, Tour view "…" menu     |
+| Command              | Where                                   |
+| -------------------- | --------------------------------------- |
+| Annotate selection   | Alt+A, margin "+"                       |
+| Annotate file        | Editor title bar, explorer context menu |
+| Copy Tandem session  | Command palette, panel title bar        |
+| Clear Tandem session | Command palette, panel title bar        |
+| Next step            | Alt+], Tour view title bar              |
+| Previous step        | Alt+[, Tour view title bar              |
+| Go to current step   | Command palette, Tour view title bar    |
+| Unfocus step         | Command palette, Tour view title bar    |
+| Clear tour           | Command palette, Tour view "…" menu     |
 
 ## Implementation notes
 
@@ -69,9 +71,10 @@ A tour is written by a coding agent to `.slick/tour.json`: a title and an ordere
 - Installed in place with **Developer: Install Extension from Location…** pointing at the repo, so a window reload picks up code changes.
 - No build step: `main` points at `src/extension.ts` and VS Code's bundled Node (24.x) strips types at load. TypeScript 7 is used only to type-check (`tsc --noEmit`, with `erasableSyntaxOnly` and `.ts` import extensions). The one runtime dependency is mermaid, loaded from `node_modules` into the tour document only when a step has a diagram.
 - The tour document is a webview view (`registerWebviewViewProvider`), kept alive while hidden. Step bodies are rendered by VS Code's own Markdown engine (`markdown.api.render`), which with the built-in mermaid extension turns diagram fences into `.mermaid` elements. Its stylesheet and script live in `media/` and use only theme colours.
-- `.slick/session.json` is the only source of truth. Threads are rebuilt from it when the workspace opens.
+- Copy and Clear are titled "Tandem session" rather than just "Session" under the Tandem category, because the Comments panel they sit in also lists other extensions' comments.
+- `.tandem/session.json` is the only source of truth. Threads are rebuilt from it when the workspace opens.
 
 ## Later
 
-- **The agent bridge** — how an agent hands over a tour (MCP or just the file). Being planned on the [wayfinder map](https://github.com/saiashirwad/slick-annotate/issues/1).
+- **The agent bridge** — how an agent hands over a tour (MCP or just the file). Being planned on the [wayfinder map](https://github.com/saiashirwad/tandem/issues/1).
 - **Agent-written Markdown** — annotate an `.md` explanation from an agent the same way. Links like `[parser](src/parse.ts#L40)` already open in VS Code, so this may cost nothing.

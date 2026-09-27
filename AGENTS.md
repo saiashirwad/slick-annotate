@@ -1,6 +1,6 @@
-# Slick Annotate
+# Tandem
 
-Two independent features, sharing only the workspace's `.slick/` folder:
+Two independent features, sharing only the workspace's `.tandem/` folder:
 
 - **Annotations** (`src/annotations.ts`, `session.ts`, `copy.ts`): notes you write, as native comment threads.
 - **Tours** (`src/tour.ts`, `media/`): a walk through the code that an agent writes, shown in a sidebar webview.

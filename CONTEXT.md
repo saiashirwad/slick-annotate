@@ -1,6 +1,6 @@
-# Slick Annotate
+# Tandem
 
-A VS Code extension for reading code deeply, leaving free-text annotations as you go, and copying them all out at once (typically to paste into a coding agent). Reviewing code and studying it are treated as the same activity.
+A VS Code extension for reading code deeply: leaving free-text annotations as you go and copying them all out at once (typically to paste into a coding agent), and following tours of the code that an agent writes. Reviewing code and studying it are treated as the same activity.
 
 ## Language
 

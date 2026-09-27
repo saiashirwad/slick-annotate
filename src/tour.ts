@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { excludeFromGit } from './git.ts'
 import { wholeLines } from './lines.ts'
 
@@ -10,109 +10,120 @@ type Ref = { file: string; quote?: string; label?: string }
 
 type Tour = { title: string; steps: Step[] }
 
+// Where you are in the tour with this title. Another title starts afresh.
+type Progress = { title: string; step: number; focused: boolean; opened: number[] }
+
 // Messages to and from media/tour.js. `current` is -1 when no step is focused.
 type ToPage = { current: number; jump: boolean }
 
-type FromPage = { go?: number; unfocus?: boolean; open?: string; ready?: boolean }
+type FromPage = { go?: number; unfocus?: boolean; open?: string; opened?: number[]; ready?: boolean }
+
+const start = (title: string): Progress => ({ title, step: 0, focused: true, opened: [] })
 
 export function activateTour(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder) {
-  const path = join(folder.uri.fsPath, '.slick', 'tour.json')
+  const path = join(folder.uri.fsPath, '.tandem', 'tour.json')
   const root = context.extensionUri
   let tour: Tour | undefined
   let problem: string | undefined
   let sections: string[] = []
-  let current = context.workspaceState.get('slick.tourStep', 0)
-  let focused = context.workspaceState.get('slick.tourFocused', true)
-  let place: { uri: vscode.Uri; range: vscode.Range } | undefined
+  let progress = context.workspaceState.get('tandem.tour', start(''))
+  // The focused step's file, tracked even while its quote isn't found so an edit that fixes it re-highlights.
+  let target: vscode.Uri | undefined
+  let place: vscode.Range | undefined
   let view: vscode.WebviewView | undefined
-  // Bumped by every `show`, so an older one still awaiting a file gives way.
+  // Bumped by every `show` and every `load` respectively, so an older one still awaiting a file gives way.
   let revision = 0
+  let loading = 0
 
   const highlight = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
-    backgroundColor: new vscode.ThemeColor('slick.tourHighlight'),
+    backgroundColor: new vscode.ThemeColor('tandem.tourHighlight'),
   })
 
   function decorate() {
     for (const editor of vscode.window.visibleTextEditors) {
-      editor.setDecorations(highlight, place?.uri.toString() === editor.document.uri.toString() ? [place.range] : [])
+      const here = target?.toString() === editor.document.uri.toString()
+      editor.setDecorations(highlight, here && place ? [place] : [])
     }
   }
 
   function draw() {
     if (!view) return
     view.title = tour?.title ?? 'Tour'
-    view.webview.html = page(view.webview, root, sections, problem)
+    view.webview.html = page(view.webview, root, sections, progress.opened, problem)
   }
 
   function mark(jump: boolean) {
     const count = tour?.steps.length ?? 0
-    const shown = count > 0 && focused
-    void vscode.commands.executeCommand('setContext', 'slick.tourLoaded', !!tour)
-    void vscode.commands.executeCommand('setContext', 'slick.tourActive', count > 0)
-    void vscode.commands.executeCommand('setContext', 'slick.tourFocused', shown)
-    void view?.webview.postMessage({ current: shown ? current : -1, jump } satisfies ToPage)
+    const shown = count > 0 && progress.focused
+    void vscode.commands.executeCommand('setContext', 'tandem.tourLoaded', !!tour)
+    void vscode.commands.executeCommand('setContext', 'tandem.tourActive', count > 0)
+    void vscode.commands.executeCommand('setContext', 'tandem.tourFocused', shown)
+    void view?.webview.postMessage({ current: shown ? progress.step : -1, jump } satisfies ToPage)
 
-    if (view) view.description = shown ? `${current + 1} of ${count}` : undefined
+    if (view) view.description = shown ? `${progress.step + 1} of ${count}` : undefined
   }
 
   async function show(reveal: boolean) {
     const version = ++revision
+    const step = progress.focused ? tour?.steps[progress.step] : undefined
+    target = step?.file === undefined ? undefined : vscode.Uri.joinPath(folder.uri, step.file)
     place = undefined
     decorate()
-    const step = focused ? tour?.steps[current] : undefined
 
-    if (!step?.file) return
+    if (!step?.file || !target) return
 
     try {
-      const uri = vscode.Uri.joinPath(folder.uri, step.file)
-      const document = await vscode.workspace.openTextDocument(uri)
+      const document = await vscode.workspace.openTextDocument(target)
 
       if (version !== revision) return
-      const range = step.quote === undefined ? undefined : locate(document, step.quote)
-      place = range && { uri, range }
+      const found = step.quote === undefined ? undefined : locate(document, step.quote)
+      place = found?.range
       decorate()
 
       if (!reveal) return
+
+      if (found && !found.range) explain(found.count, step.file)
       const editor = await vscode.window.showTextDocument(document, { preserveFocus: true })
 
-      if (version !== revision || !range) return
-      editor.selection = new vscode.Selection(range.start, range.start)
-      editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+      if (version !== revision || !place) return
+      editor.selection = new vscode.Selection(place.start, place.start)
+      editor.revealRange(place, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
     } catch (error) {
       if (version === revision) vscode.window.showWarningMessage(`Can't open this step: ${String(error)}`)
     }
   }
 
-  async function open(target: string) {
-    const [file = '', quote] = target.split(/#(.*)/s)
+  async function open(link: string) {
+    const [file = '', quote] = link.split(/#(.*)/s)
 
     try {
       const document = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, file))
-      const range = quote ? locate(document, quote) : undefined
-      await vscode.window.showTextDocument(document, { preserveFocus: true, selection: range })
+      const found = quote ? locate(document, quote) : undefined
+
+      if (found && !found.range) explain(found.count, file)
+      await vscode.window.showTextDocument(document, { preserveFocus: true, selection: found?.range })
     } catch (error) {
       vscode.window.showWarningMessage(`Can't open ${file}: ${String(error)}`)
     }
   }
 
-  function remember(index: number) {
-    current = Math.max(0, Math.min(index, (tour?.steps.length ?? 1) - 1))
-    void context.workspaceState.update('slick.tourStep', current)
-    void context.workspaceState.update('slick.tourFocused', focused)
+  function remember() {
+    void context.workspaceState.update('tandem.tour', progress)
   }
 
   function go(index: number) {
     if (!tour?.steps.length) return
-    focused = true
-    remember(index)
+    progress.focused = true
+    progress.step = Math.max(0, Math.min(index, tour.steps.length - 1))
+    remember()
     mark(false)
     void show(true)
   }
 
   function unfocus() {
-    focused = false
-    remember(current)
+    progress.focused = false
+    remember()
     mark(false)
     void show(false)
   }
@@ -121,30 +132,44 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     const answer = await vscode.window.showWarningMessage('Delete the tour?', { modal: true }, 'Delete')
 
     if (answer !== 'Delete') return
-    focused = true
-    remember(0)
+    progress = start('')
+    remember()
     rmSync(path, { force: true })
   }
 
   async function load() {
+    const version = ++loading
     let next: Tour | undefined
     let html: string[] = []
-    problem = undefined
 
     try {
       // SAFETY: the tour file is written by an agent to the documented shape, like session.json.
       next = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as Tour) : undefined
+
+      if (next && !Array.isArray(next.steps)) throw new Error('it has no "steps" list')
       html = await Promise.all(next?.steps.map(section) ?? [])
     } catch (error) {
-      next = undefined
-      problem = `Can't read .slick/tour.json: ${String(error)}`
+      if (version !== loading) return
+      // Keep showing the last good tour: the agent may be partway through rewriting the file.
+      problem = `Can't read .tandem/tour.json: ${String(error)}`
+      draw()
+      mark(true)
+
+      return
     }
 
+    if (version !== loading) return
     tour = next
     sections = html
+    problem = undefined
 
-    if (tour) excludeFromGit(folder.uri.fsPath)
-    remember(current)
+    if (tour) {
+      excludeFromGit(folder.uri.fsPath)
+
+      if (tour.title !== progress.title) progress = start(tour.title)
+      progress.step = Math.min(progress.step, Math.max(0, tour.steps.length - 1))
+      remember()
+    }
 
     draw()
     mark(true)
@@ -158,10 +183,15 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
     if (message.open !== undefined) void open(message.open)
 
+    if (message.opened) {
+      progress.opened = message.opened
+      remember()
+    }
+
     if (message.ready) mark(true)
   }
 
-  const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, '.slick/tour.json'))
+  const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, '.tandem/tour.json'))
 
   context.subscriptions.push(
     highlight,
@@ -171,7 +201,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     watcher.onDidDelete(load),
 
     vscode.window.registerWebviewViewProvider(
-      'slick.tour',
+      'tandem.tour',
       {
         resolveWebviewView: (resolved) => {
           view = resolved
@@ -188,26 +218,39 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     vscode.window.onDidChangeVisibleTextEditors(decorate),
 
     vscode.workspace.onDidChangeTextDocument(({ document }) => {
-      if (place?.uri.toString() === document.uri.toString()) void show(false)
+      if (target?.toString() === document.uri.toString()) void show(false)
     }),
 
-    vscode.commands.registerCommand('slick.tourNext', () => go(current + 1)),
-    vscode.commands.registerCommand('slick.tourPrevious', () => go(current - 1)),
-    vscode.commands.registerCommand('slick.tourCurrent', () => go(current)),
-    vscode.commands.registerCommand('slick.tourUnfocus', unfocus),
-    vscode.commands.registerCommand('slick.tourClear', clear),
+    vscode.commands.registerCommand('tandem.tourNext', () => go(progress.step + 1)),
+    vscode.commands.registerCommand('tandem.tourPrevious', () => go(progress.step - 1)),
+    vscode.commands.registerCommand('tandem.tourCurrent', () => go(progress.step)),
+    vscode.commands.registerCommand('tandem.tourUnfocus', unfocus),
+    vscode.commands.registerCommand('tandem.tourClear', clear),
   )
 
   void load()
 }
 
+// `range` is set only when the quote occurs exactly once.
 function locate(document: vscode.TextDocument, quote: string) {
   const text = document.getText()
-  const start = text.indexOf(quote)
+  const first = text.indexOf(quote)
+  let count = 0
 
-  if (start === -1 || text.indexOf(quote, start + 1) !== -1) return
+  for (let at = first; quote && at !== -1; at = text.indexOf(quote, at + 1)) count++
 
-  return wholeLines(document, new vscode.Range(document.positionAt(start), document.positionAt(start + quote.length)))
+  const range =
+    count === 1
+      ? wholeLines(document, new vscode.Range(document.positionAt(first), document.positionAt(first + quote.length)))
+      : undefined
+
+  return { range, count }
+}
+
+function explain(count: number, file: string) {
+  const where = basename(file)
+  const message = count === 0 ? `Quote not found in ${where}` : `Quote matches ${count} places in ${where}`
+  vscode.window.setStatusBarMessage(message, 4000)
 }
 
 const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
@@ -216,7 +259,7 @@ const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeA
 const markdown = (text: string) => vscode.commands.executeCommand<string>('markdown.api.render', text)
 
 async function section(step: Step, index: number) {
-  const file = step.file ? `<span class="file">${escape(step.file)}</span>` : ''
+  const file = step.file ? `<button class="file">${escape(step.file)}</button>` : ''
   const refs = step.refs?.length ? `<div class="refs">${step.refs.map(link).join('')}</div>` : ''
   const details = step.details ? `<div class="details">${await markdown(step.details)}</div>` : ''
   const more = details && '<button class="more">Show more</button>'
@@ -234,10 +277,17 @@ function link({ file, quote, label }: Ref) {
   return `<a class="ref" href="${escape(href)}">${escape(label ?? file)}</a>`
 }
 
-function page(webview: vscode.Webview, root: vscode.Uri, sections: string[], problem: string | undefined) {
+function page(
+  webview: vscode.Webview,
+  root: vscode.Uri,
+  sections: string[],
+  opened: number[],
+  problem: string | undefined,
+) {
   const asset = (path: string) => webview.asWebviewUri(vscode.Uri.joinPath(root, path))
-  const empty = problem ?? 'No tour yet. An agent writes one to .slick/tour.json.'
-  const content = sections.length ? sections.join('\n') : `<p class="empty">${escape(empty)}</p>`
+  const notice = problem ? `<p class="problem">${escape(problem)}</p>` : ''
+  const empty = problem ? '' : '<p class="empty">No tour yet. An agent writes one to .tandem/tour.json.</p>'
+  const content = sections.length ? sections.join('\n') : empty
   const diagrams = content.includes('class="mermaid"')
   const mermaid = diagrams ? `<script src="${asset('node_modules/mermaid/dist/mermaid.min.js')}"></script>` : ''
   // Mermaid draws its diagrams with inline styles, hence 'unsafe-inline' for styles only.
@@ -251,7 +301,8 @@ function page(webview: vscode.Webview, root: vscode.Uri, sections: string[], pro
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${asset('media/tour.css')}">
 </head>
-<body>
+<body data-opened="${opened.join(' ')}">
+${notice}
 ${content}
 ${mermaid}
 <script src="${asset('media/tour.js')}"></script>

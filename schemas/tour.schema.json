@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Slick tour",
+  "description": "A walk through the code, shown in the Tour view.",
+  "type": "object",
+  "required": ["title", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "title": { "type": "string", "description": "Names the tour. A new title starts the reader at step 1." },
+    "steps": { "type": "array", "items": { "$ref": "#/definitions/step" } }
+  },
+  "definitions": {
+    "step": {
+      "type": "object",
+      "required": ["title", "body"],
+      "additionalProperties": false,
+      "dependencies": { "quote": ["file"] },
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string", "description": "A short explanation, in Markdown." },
+        "details": { "type": "string", "description": "The longer explanation, shown on \"Show more\"." },
+        "file": { "type": "string", "description": "Path from the workspace root." },
+        "quote": {
+          "type": "string",
+          "description": "Code from the file to highlight. Must appear there exactly once."
+        },
+        "refs": { "type": "array", "items": { "$ref": "#/definitions/ref" } }
+      }
+    },
+    "ref": {
+      "type": "object",
+      "required": ["file"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "description": "Path from the workspace root." },
+        "quote": { "type": "string", "description": "Code to select. Must appear in the file exactly once." },
+        "label": { "type": "string", "description": "Shown instead of the path." }
+      }
+    }
+  }
+}

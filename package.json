@@ -1,6 +1,7 @@
 {
-  "name": "slick-annotate",
-  "displayName": "Slick Annotate",
+  "name": "tandem",
+  "displayName": "Tandem",
+  "description": "Annotate code as you read, copy the annotations as Markdown, and follow code tours written by an agent.",
   "publisher": "saiashirwad",
   "version": "0.0.1",
   "private": true,
@@ -16,228 +17,232 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "slick-tour",
+          "id": "tandem-tour",
           "title": "Tour",
           "icon": "$(map)"
         }
       ]
     },
     "views": {
-      "slick-tour": [
+      "tandem-tour": [
         {
           "type": "webview",
-          "id": "slick.tour",
+          "id": "tandem.tour",
           "name": "Tour"
         }
       ]
     },
     "commands": [
       {
-        "command": "slick.annotateSelection",
+        "command": "tandem.annotateSelection",
         "title": "Annotate Selection",
-        "category": "Slick"
+        "category": "Tandem"
       },
       {
-        "command": "slick.annotateFile",
+        "command": "tandem.annotateFile",
         "title": "Annotate File",
-        "category": "Slick",
+        "category": "Tandem",
         "icon": "$(comment)"
       },
       {
-        "command": "slick.copySession",
-        "title": "Copy Session",
-        "category": "Slick",
+        "command": "tandem.copySession",
+        "title": "Copy Tandem Session",
         "icon": "$(copy)"
       },
       {
-        "command": "slick.clearSession",
-        "title": "Clear Session",
-        "category": "Slick",
+        "command": "tandem.clearSession",
+        "title": "Clear Tandem Session",
         "icon": "$(clear-all)"
       },
       {
-        "command": "slick.annotate",
+        "command": "tandem.annotate",
         "title": "Annotate"
       },
       {
-        "command": "slick.editAnnotation",
+        "command": "tandem.editAnnotation",
         "title": "Edit",
         "icon": "$(edit)"
       },
       {
-        "command": "slick.deleteAnnotation",
+        "command": "tandem.deleteAnnotation",
         "title": "Delete",
         "icon": "$(trash)"
       },
       {
-        "command": "slick.saveAnnotation",
+        "command": "tandem.saveAnnotation",
         "title": "Save"
       },
       {
-        "command": "slick.cancelEdit",
+        "command": "tandem.cancelEdit",
         "title": "Cancel"
       },
       {
-        "command": "slick.tourNext",
+        "command": "tandem.tourNext",
         "title": "Next Step",
-        "category": "Slick",
+        "category": "Tandem",
         "icon": "$(arrow-right)",
-        "enablement": "slick.tourActive"
+        "enablement": "tandem.tourActive"
       },
       {
-        "command": "slick.tourPrevious",
+        "command": "tandem.tourPrevious",
         "title": "Previous Step",
-        "category": "Slick",
+        "category": "Tandem",
         "icon": "$(arrow-left)",
-        "enablement": "slick.tourActive"
+        "enablement": "tandem.tourActive"
       },
       {
-        "command": "slick.tourCurrent",
+        "command": "tandem.tourCurrent",
         "title": "Go to Current Step",
-        "category": "Slick",
+        "category": "Tandem",
         "icon": "$(location)",
-        "enablement": "slick.tourActive"
+        "enablement": "tandem.tourActive"
       },
       {
-        "command": "slick.tourUnfocus",
+        "command": "tandem.tourUnfocus",
         "title": "Unfocus Step",
-        "category": "Slick",
+        "category": "Tandem",
         "icon": "$(close)",
-        "enablement": "slick.tourFocused"
+        "enablement": "tandem.tourFocused"
       },
       {
-        "command": "slick.tourClear",
+        "command": "tandem.tourClear",
         "title": "Clear Tour",
-        "category": "Slick",
-        "enablement": "slick.tourLoaded"
+        "category": "Tandem",
+        "enablement": "tandem.tourLoaded"
       }
     ],
     "keybindings": [
       {
-        "command": "slick.annotateSelection",
+        "command": "tandem.annotateSelection",
         "key": "alt+a",
         "when": "editorTextFocus"
       },
       {
-        "command": "slick.tourNext",
+        "command": "tandem.tourNext",
         "key": "alt+]",
-        "when": "slick.tourActive"
+        "when": "tandem.tourActive"
       },
       {
-        "command": "slick.tourPrevious",
+        "command": "tandem.tourPrevious",
         "key": "alt+[",
-        "when": "slick.tourActive"
+        "when": "tandem.tourActive"
       }
     ],
     "menus": {
       "comments/commentThread/context": [
         {
-          "command": "slick.annotate",
+          "command": "tandem.annotate",
           "group": "inline",
-          "when": "commentController == slick-annotate"
+          "when": "commentController == tandem"
         }
       ],
       "comments/comment/title": [
         {
-          "command": "slick.editAnnotation",
+          "command": "tandem.editAnnotation",
           "group": "group@1",
-          "when": "commentController == slick-annotate"
+          "when": "commentController == tandem"
         },
         {
-          "command": "slick.deleteAnnotation",
+          "command": "tandem.deleteAnnotation",
           "group": "group@2",
-          "when": "commentController == slick-annotate"
+          "when": "commentController == tandem"
         }
       ],
       "comments/comment/context": [
         {
-          "command": "slick.cancelEdit",
+          "command": "tandem.cancelEdit",
           "group": "inline@1",
-          "when": "commentController == slick-annotate"
+          "when": "commentController == tandem"
         },
         {
-          "command": "slick.saveAnnotation",
+          "command": "tandem.saveAnnotation",
           "group": "inline@2",
-          "when": "commentController == slick-annotate"
+          "when": "commentController == tandem"
         }
       ],
       "commandPalette": [
         {
-          "command": "slick.annotate",
+          "command": "tandem.annotate",
           "when": "false"
         },
         {
-          "command": "slick.editAnnotation",
+          "command": "tandem.editAnnotation",
           "when": "false"
         },
         {
-          "command": "slick.deleteAnnotation",
+          "command": "tandem.deleteAnnotation",
           "when": "false"
         },
         {
-          "command": "slick.saveAnnotation",
+          "command": "tandem.saveAnnotation",
           "when": "false"
         },
         {
-          "command": "slick.cancelEdit",
+          "command": "tandem.cancelEdit",
           "when": "false"
         }
       ],
       "view/title": [
         {
-          "command": "slick.copySession",
+          "command": "tandem.copySession",
           "group": "navigation",
           "when": "view == workbench.panel.comments"
         },
         {
-          "command": "slick.clearSession",
+          "command": "tandem.clearSession",
           "group": "navigation",
           "when": "view == workbench.panel.comments"
         },
         {
-          "command": "slick.tourPrevious",
+          "command": "tandem.tourPrevious",
           "group": "navigation@1",
-          "when": "view == slick.tour && slick.tourActive"
+          "when": "view == tandem.tour && tandem.tourActive"
         },
         {
-          "command": "slick.tourNext",
+          "command": "tandem.tourNext",
           "group": "navigation@2",
-          "when": "view == slick.tour && slick.tourActive"
+          "when": "view == tandem.tour && tandem.tourActive"
         },
         {
-          "command": "slick.tourCurrent",
+          "command": "tandem.tourCurrent",
           "group": "navigation@3",
-          "when": "view == slick.tour && slick.tourActive"
+          "when": "view == tandem.tour && tandem.tourActive"
         },
         {
-          "command": "slick.tourUnfocus",
+          "command": "tandem.tourUnfocus",
           "group": "navigation@4",
-          "when": "view == slick.tour && slick.tourFocused"
+          "when": "view == tandem.tour && tandem.tourFocused"
         },
         {
-          "command": "slick.tourClear",
+          "command": "tandem.tourClear",
           "group": "tour",
-          "when": "view == slick.tour && slick.tourLoaded"
+          "when": "view == tandem.tour && tandem.tourLoaded"
         }
       ],
       "editor/title": [
         {
-          "command": "slick.annotateFile",
+          "command": "tandem.annotateFile",
           "group": "navigation",
           "when": "resourceScheme == file"
         }
       ],
       "explorer/context": [
         {
-          "command": "slick.annotateFile",
-          "group": "slick",
+          "command": "tandem.annotateFile",
+          "group": "tandem",
           "when": "!explorerResourceIsFolder"
         }
       ]
     },
+    "jsonValidation": [
+      {
+        "fileMatch": "**/.tandem/tour.json",
+        "url": "./schemas/tour.schema.json"
+      }
+    ],
     "colors": [
       {
-        "id": "slick.tourHighlight",
+        "id": "tandem.tourHighlight",
         "description": "Background of the current tour step's lines.",
         "defaults": {
           "dark": "#3794ff1f",
