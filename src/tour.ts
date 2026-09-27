@@ -3,7 +3,10 @@ import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 // `body` is the short explanation shown when the step opens; `details` is the longer one behind "Show more".
-type Step = { title: string; body: string; details?: string; file?: string; quote?: string }
+// `refs` are other places worth seeing alongside the step's own code.
+type Step = { title: string; body: string; details?: string; file?: string; quote?: string; refs?: Ref[] }
+
+type Ref = { file: string; quote?: string; label?: string }
 
 type Rendered = { body: string; details?: string }
 
@@ -81,6 +84,19 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     }
   }
 
+  // Opens a place the text links to, `file` or `file#quote`, selecting the quote if it occurs exactly once.
+  async function open(target: string) {
+    const [file = '', quote] = target.split(/#(.*)/s)
+
+    try {
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, file))
+      const range = quote ? locate(document, quote) : undefined
+      await vscode.window.showTextDocument(document, { preserveFocus: true, selection: range })
+    } catch (error) {
+      vscode.window.showWarningMessage(`Can't open ${file}: ${String(error)}`)
+    }
+  }
+
   function go(index: number) {
     if (!tour?.steps.length) return
     current = Math.max(0, Math.min(index, tour.steps.length - 1))
@@ -155,8 +171,10 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
           view = resolved
           view.webview.options = { enableScripts: true, localResourceRoots: [media, mermaid] }
 
-          view.webview.onDidReceiveMessage((message: { go?: number; ready?: boolean }) => {
+          view.webview.onDidReceiveMessage((message: { go?: number; open?: string; ready?: boolean }) => {
             if (message.go !== undefined) go(message.go)
+
+            if (message.open !== undefined) void open(message.open)
 
             if (message.ready) mark(true)
           })
@@ -201,6 +219,13 @@ function locate(document: vscode.TextDocument, quote: string) {
   return new vscode.Range(first, 0, last, document.lineAt(last).range.end.character)
 }
 
+// A ref is the same kind of link the text can hold: `file#quote`.
+function link({ file, quote, label }: Ref) {
+  const href = quote ? `${file}#${encodeURIComponent(quote)}` : file
+
+  return `<a class="ref" href="${escape(href)}">${escape(label ?? file)}</a>`
+}
+
 const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
 
 function page(
@@ -222,6 +247,7 @@ function page(
   <h2>${escape(step.title)}</h2>
   <div class="body">
     ${rendered[index]?.body ?? ''}
+    ${step.refs?.length ? `<div class="refs">${step.refs.map(link).join('')}</div>` : ''}
     ${rendered[index]?.details ? `<div class="details">${rendered[index].details}</div><button class="more">Show more</button>` : ''}
   </div>
 </section>`,

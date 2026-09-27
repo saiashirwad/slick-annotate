@@ -12,7 +12,21 @@ document.addEventListener('click', (event) => {
     return
   }
 
-  if (!section || event.target.closest('a') || String(getSelection())) return
+  // Links to code, `path/to/file` or `path/to/file#quoted code`, open it in the editor. Web links behave as usual.
+  const anchor = event.target.closest('a')
+  const href = anchor?.getAttribute('data-href') ?? anchor?.getAttribute('href')
+
+  if (href && !href.startsWith('#') && !/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+    event.preventDefault()
+    const [file, quote] = href.split(/#(.*)/s)
+    vscode.postMessage({
+      open: quote === undefined ? decodeURI(file) : `${decodeURI(file)}#${decodeURIComponent(quote)}`,
+    })
+
+    return
+  }
+
+  if (!section || anchor || String(getSelection())) return
   vscode.postMessage({ go: Number(section.dataset.index) })
 })
 

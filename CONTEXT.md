@@ -27,3 +27,7 @@ _Avoid_: Walkthrough, guide, lesson
 **Step**:
 One stop on a tour: at most one piece of code the agent quotes, plus what it says about it. Steps are not annotations; annotations are only ever yours.
 _Avoid_: Stop, agent annotation, agent comment
+
+**Ref**:
+Another place in the code a step points to, besides its own, worth seeing alongside it.
+_Avoid_: Citation, related location, link

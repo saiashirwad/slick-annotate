@@ -26,13 +26,14 @@ A coding agent can walk you through code by writing `.slick/tour.json`:
       "body": "A short explanation, in Markdown.",
       "details": "Optional: the longer one, shown on \"Show more\". Mermaid diagrams work in both.",
       "file": "src/server.ts",
-      "quote": "exact code from the file"
+      "quote": "exact code from the file",
+      "refs": [{ "label": "the router", "file": "src/router.ts", "quote": "export function route(" }]
     }
   ]
 }
 ```
 
-The **Tour** view in the activity bar shows the whole tour as one document, with only the current step open. Clicking a step or pressing Alt+] / Alt+[ highlights its code. A step's `quote` must appear exactly once in its `file`; otherwise the file opens with nothing highlighted. The highlight colour is `slick.tourHighlight`, which you can change in `workbench.colorCustomizations`.
+The **Tour** view in the activity bar shows the whole tour as one document, with only the current step open. Clicking a step or pressing Alt+] / Alt+[ highlights its code. A step's `quote` must appear exactly once in its `file`; otherwise the file opens with nothing highlighted. Links in the text open code too: `[the router](src/router.ts)` opens a file, and `[route](<src/router.ts#export function route(>)` also selects that quoted code. `refs` are the same links, shown under the step's text. The highlight colour is `slick.tourHighlight`, which you can change in `workbench.colorCustomizations`.
 
 | Command                   | Where                                |
 | ------------------------- | ------------------------------------ |

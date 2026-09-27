@@ -51,6 +51,28 @@ section:not(.expanded) .details {
   overflow: hidden;
 }
 
+/* A step's refs: other places worth seeing, as small links under its text. */
+
+.refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.ref {
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--vscode-textLink-foreground) 35%, transparent);
+  border-radius: 10px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.ref:hover {
+  background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent);
+}
+
 .more {
   padding: 0;
   border: none;
