@@ -2,7 +2,8 @@ import { errorMessage } from './errors.ts'
 import * as vscode from 'vscode'
 import { activateAnnotations } from './annotations.ts'
 import { excludeFromGit } from './git.ts'
-import { activateTour } from './tour.ts'
+import { submitReview } from './submit.ts'
+import { activateWalk } from './walk.ts'
 
 export function activate(context: vscode.ExtensionContext) {
   const folder = vscode.workspace.workspaceFolders?.[0]
@@ -16,5 +17,9 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   activateAnnotations(context, folder)
-  activateTour(context, folder)
+  const walk = activateWalk(context, folder)
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('tandem.walkSubmit', () => submitReview(folder.uri.fsPath, walk.submit)),
+  )
 }

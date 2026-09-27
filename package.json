@@ -1,7 +1,7 @@
 {
   "name": "tandem",
   "displayName": "Tandem",
-  "description": "Annotate code as you read, copy the annotations as Markdown, and follow code tours written by an agent.",
+  "description": "Annotate code as you read, copy the annotations as Markdown, and follow and review walks through the code written by an agent.",
   "publisher": "saiashirwad",
   "version": "0.0.1",
   "private": true,
@@ -17,18 +17,18 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "tandem-tour",
-          "title": "Tour",
+          "id": "tandem-walk",
+          "title": "Walk",
           "icon": "$(map)"
         }
       ]
     },
     "views": {
-      "tandem-tour": [
+      "tandem-walk": [
         {
           "type": "webview",
-          "id": "tandem.tour",
-          "name": "Tour"
+          "id": "tandem.walk",
+          "name": "Walk"
         }
       ]
     },
@@ -77,38 +77,52 @@
         "title": "Cancel"
       },
       {
-        "command": "tandem.tourNext",
+        "command": "tandem.walkNext",
         "title": "Next Step",
         "category": "Tandem",
         "icon": "$(arrow-right)",
-        "enablement": "tandem.tourActive"
+        "enablement": "tandem.walkActive"
       },
       {
-        "command": "tandem.tourPrevious",
+        "command": "tandem.walkPrevious",
         "title": "Previous Step",
         "category": "Tandem",
         "icon": "$(arrow-left)",
-        "enablement": "tandem.tourActive"
+        "enablement": "tandem.walkActive"
       },
       {
-        "command": "tandem.tourCurrent",
+        "command": "tandem.walkCurrent",
         "title": "Go to Current Step",
         "category": "Tandem",
         "icon": "$(location)",
-        "enablement": "tandem.tourActive"
+        "enablement": "tandem.walkActive"
       },
       {
-        "command": "tandem.tourUnfocus",
+        "command": "tandem.walkUnfocus",
         "title": "Unfocus Step",
         "category": "Tandem",
         "icon": "$(close)",
-        "enablement": "tandem.tourFocused"
+        "enablement": "tandem.walkFocused"
       },
       {
-        "command": "tandem.tourClear",
-        "title": "Clear Tour",
+        "command": "tandem.walkApprove",
+        "title": "Toggle Approval",
         "category": "Tandem",
-        "enablement": "tandem.tourLoaded"
+        "icon": "$(check)",
+        "enablement": "tandem.walkProposalFocused"
+      },
+      {
+        "command": "tandem.walkSubmit",
+        "title": "Submit Review",
+        "category": "Tandem",
+        "icon": "$(send)",
+        "enablement": "tandem.walkActive"
+      },
+      {
+        "command": "tandem.walkClear",
+        "title": "Clear Walk",
+        "category": "Tandem",
+        "enablement": "tandem.walkLoaded"
       }
     ],
     "keybindings": [
@@ -118,14 +132,19 @@
         "when": "editorTextFocus"
       },
       {
-        "command": "tandem.tourNext",
+        "command": "tandem.walkNext",
         "key": "alt+]",
-        "when": "tandem.tourActive"
+        "when": "tandem.walkActive"
       },
       {
-        "command": "tandem.tourPrevious",
+        "command": "tandem.walkPrevious",
         "key": "alt+[",
-        "when": "tandem.tourActive"
+        "when": "tandem.walkActive"
+      },
+      {
+        "command": "tandem.walkApprove",
+        "key": "alt+enter",
+        "when": "tandem.walkProposalFocused && !findInputFocussed && !notebookEditorFocused && !terminalFocus"
       }
     ],
     "menus": {
@@ -194,29 +213,34 @@
           "when": "view == workbench.panel.comments"
         },
         {
-          "command": "tandem.tourPrevious",
+          "command": "tandem.walkPrevious",
           "group": "navigation@1",
-          "when": "view == tandem.tour && tandem.tourActive"
+          "when": "view == tandem.walk && tandem.walkActive"
         },
         {
-          "command": "tandem.tourNext",
+          "command": "tandem.walkNext",
           "group": "navigation@2",
-          "when": "view == tandem.tour && tandem.tourActive"
+          "when": "view == tandem.walk && tandem.walkActive"
         },
         {
-          "command": "tandem.tourCurrent",
+          "command": "tandem.walkCurrent",
           "group": "navigation@3",
-          "when": "view == tandem.tour && tandem.tourActive"
+          "when": "view == tandem.walk && tandem.walkActive"
         },
         {
-          "command": "tandem.tourUnfocus",
+          "command": "tandem.walkUnfocus",
           "group": "navigation@4",
-          "when": "view == tandem.tour && tandem.tourFocused"
+          "when": "view == tandem.walk && tandem.walkFocused"
         },
         {
-          "command": "tandem.tourClear",
-          "group": "tour",
-          "when": "view == tandem.tour && tandem.tourLoaded"
+          "command": "tandem.walkSubmit",
+          "group": "navigation@5",
+          "when": "view == tandem.walk && tandem.walkActive"
+        },
+        {
+          "command": "tandem.walkClear",
+          "group": "walk",
+          "when": "view == tandem.walk && tandem.walkLoaded"
         }
       ],
       "editor/title": [
@@ -236,14 +260,14 @@
     },
     "jsonValidation": [
       {
-        "fileMatch": "**/.tandem/tour.json",
-        "url": "./schemas/tour.schema.json"
+        "fileMatch": "**/.tandem/walk.json",
+        "url": "./schemas/walk.schema.json"
       }
     ],
     "colors": [
       {
-        "id": "tandem.tourHighlight",
-        "description": "Background of the current tour step's lines.",
+        "id": "tandem.walkHighlight",
+        "description": "Background of the current walk step's lines.",
         "defaults": {
           "dark": "#3794ff1f",
           "light": "#0066bf14",

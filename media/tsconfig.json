@@ -11,5 +11,5 @@
     "allowImportingTsExtensions": true,
     "types": []
   },
-  "include": ["tour.js", "webview.d.ts"]
+  "include": ["walk.js", "webview.d.ts"]
 }

@@ -3,9 +3,9 @@
 Two independent features, sharing only the workspace's `.tandem/` folder:
 
 - **Annotations** (`src/annotations.ts`, `session.ts`, `copy.ts`): notes you write, as native comment threads.
-- **Tours** (`src/tour.ts`, `tour-data.ts`, `tour-messages.ts`, `tour-page.ts`, `media/`): a walk through the code that an agent writes, shown in a sidebar webview.
+- **Walks** (`src/walk.ts`, `walk-data.ts`, `walk-messages.ts`, `walk-page.ts`, `walk-diff.ts`, `review.ts`, `media/`): a walk through the code that an agent writes, shown in a sidebar webview, and your review of it.
 
-Neither imports the other; what both need gets its own module (`lines.ts`, `git.ts`, `validation.ts`, `errors.ts`).
+Neither imports the other; what both need gets its own module (`lines.ts`, `git.ts`, `validation.ts`, `errors.ts`). `submit.ts` is the one place they meet: it copies the review together with the session.
 
 [SPEC.md](./SPEC.md) says what it does and why it's built this way. [CONTEXT.md](./CONTEXT.md) defines the terms to use.
 
@@ -13,7 +13,7 @@ Neither imports the other; what both need gets its own module (`lines.ts`, `git.
 
 - No build step: VS Code strips types at load, so use `.ts` imports and erasable TypeScript only.
 - Stable VS Code API only, so it stays publishable.
-- Native UI, except the tour document.
+- Native UI, except the walk document.
 - Comment only what the code can't say.
 - Update README.md and SPEC.md with any behaviour change.
 

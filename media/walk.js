@@ -1,6 +1,6 @@
 // @ts-check
-/** @typedef {import('../src/tour-messages.ts').FromPage} FromPage */
-/** @typedef {import('../src/tour-messages.ts').ToPage} ToPage */
+/** @typedef {import('../src/walk-messages.ts').FromPage} FromPage */
+/** @typedef {import('../src/walk-messages.ts').ToPage} ToPage */
 
 const vscode = acquireVsCodeApi()
 
@@ -9,15 +9,16 @@ const documentId = Number(document.body.dataset.documentId)
 const sections = [...document.querySelectorAll('section')]
 
 /** @param {HTMLElement} section */
-const indexOf = (section) => Number(section.dataset.index)
+const idOf = (section) => section.dataset.id ?? ''
 
 /** @param {FromPage['action']} action */
 const send = (action) => vscode.postMessage({ documentId, action })
 
 // The extension owns which steps are open; this is only the first paint, before its first message.
-const initiallyOpened = new Set((document.body.dataset.opened ?? '').split(' ').filter(Boolean).map(Number))
+/** @type {string[]} */
+const initiallyOpened = JSON.parse(document.body.dataset.opened ?? '[]')
 
-for (const section of sections) section.classList.toggle('open', initiallyOpened.has(indexOf(section)))
+for (const section of sections) section.classList.toggle('open', initiallyOpened.includes(idOf(section)))
 
 /** @param {string} href */
 function codeLink(href) {
@@ -41,6 +42,11 @@ document.addEventListener('click', (event) => {
     return
   }
 
+  if (event.target.closest('.open-diff') && section) return send({ type: 'openDiff', id: idOf(section) })
+
+  // The checkbox reports itself through 'change'; clicking it shouldn't also move the editor.
+  if (event.target.closest('.approve')) return
+
   const anchor = event.target.closest('a')
   const href = anchor?.getAttribute('data-href') ?? anchor?.getAttribute('href')
 
@@ -54,28 +60,53 @@ document.addEventListener('click', (event) => {
   }
 
   if (!section || anchor || String(getSelection())) return
+  const id = idOf(section)
 
-  if (event.target.closest('.file') && section.classList.contains('open')) {
-    return send({ type: 'focusStep', index: indexOf(section) })
-  }
+  if (event.target.closest('.file') && section.classList.contains('open')) return send({ type: 'focusStep', id })
 
-  if (event.target.closest('.collapse')) return send({ type: 'collapseStep', index: indexOf(section) })
+  if (event.target.closest('.collapse') && section.classList.contains('open')) return send({ type: 'collapseStep', id })
 
   // Clicks inside the focused step don't focus it again, so reading never pulls the editor back.
-  if (!section.classList.contains('current')) send({ type: 'focusStep', index: indexOf(section) })
+  if (!section.classList.contains('current')) send({ type: 'focusStep', id })
+})
+
+document.addEventListener('change', ({ target }) => {
+  const section = target instanceof HTMLInputElement && target.closest('section')
+
+  if (section) send({ type: 'approve', id: idOf(section), approved: target.checked })
+})
+
+document.addEventListener('input', ({ target }) => {
+  if (!(target instanceof HTMLTextAreaElement)) return
+  const section = target.closest('section')
+
+  if (section) send({ type: 'respond', id: idOf(section), text: target.value })
 })
 
 window.addEventListener('message', (/** @type {MessageEvent<ToPage>} */ { data }) => {
-  const target = sections.find((section) => indexOf(section) === data.focusedStep)
+  const target = sections.find((section) => idOf(section) === data.focusedStep)
   const before = target?.getBoundingClientRect().top ?? 0
   const opened = new Set(data.opened)
+  const approved = new Set(data.approved)
+  const responses = new Map(data.responses.map(({ id, text }) => [id, text]))
 
   for (const section of sections) {
+    const id = idOf(section)
+    const response = section.querySelector('textarea')
+    const approve = section.querySelector('.approve input')
+    const text = responses.get(id) ?? ''
     section.classList.toggle('current', section === target)
-    section.classList.toggle('open', opened.has(indexOf(section)))
+    section.classList.toggle('open', opened.has(id))
+    section.classList.toggle('approved', approved.has(id))
+    section.classList.toggle('responded', text.trim() !== '')
+
+    // What you're typing is newer than what the extension last saved.
+    if (response && response !== document.activeElement) response.value = text
+
+    if (approve instanceof HTMLInputElement) approve.checked = approved.has(id)
   }
 
-  if (!target) return
+  if (!target || data.scroll === 'none') return
 
   if (data.scroll === 'reveal') return target.scrollIntoView({ block: 'start' })
   window.scrollBy(0, target.getBoundingClientRect().top - before)
