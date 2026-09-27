@@ -3,9 +3,9 @@
 Two independent features, sharing only the workspace's `.tandem/` folder:
 
 - **Annotations** (`src/annotations.ts`, `session.ts`, `copy.ts`): notes you write, as native comment threads.
-- **Tours** (`src/tour.ts`, `media/`): a walk through the code that an agent writes, shown in a sidebar webview.
+- **Tours** (`src/tour.ts`, `tour-data.ts`, `tour-messages.ts`, `tour-page.ts`, `media/`): a walk through the code that an agent writes, shown in a sidebar webview.
 
-Neither imports the other; what both need gets its own module (`lines.ts`, `git.ts`).
+Neither imports the other; what both need gets its own module (`lines.ts`, `git.ts`, `validation.ts`, `errors.ts`).
 
 [SPEC.md](./SPEC.md) says what it does and why it's built this way. [CONTEXT.md](./CONTEXT.md) defines the terms to use.
 

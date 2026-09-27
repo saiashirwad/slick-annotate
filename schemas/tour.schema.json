@@ -1,5 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "Mirrors the Tour schema in src/tour-data.ts; change both together.",
   "title": "Tandem tour",
   "description": "A walk through the code, shown in the Tour view.",
   "type": "object",
@@ -11,6 +12,11 @@
     "steps": { "type": "array", "items": { "$ref": "#/definitions/step" } }
   },
   "definitions": {
+    "filePath": {
+      "type": "string",
+      "description": "Path from the workspace root. Not absolute, and without \"..\".",
+      "pattern": "^(?![/\\\\]|[a-zA-Z]:)(?!(?:.*[/\\\\])?\\.\\.(?:[/\\\\]|$))[^\\u0000]+$"
+    },
     "step": {
       "type": "object",
       "required": ["title", "body"],
@@ -20,9 +26,10 @@
         "title": { "type": "string" },
         "body": { "type": "string", "description": "A short explanation, in Markdown." },
         "details": { "type": "string", "description": "The longer explanation, shown on \"Show more\"." },
-        "file": { "type": "string", "description": "Path from the workspace root." },
+        "file": { "$ref": "#/definitions/filePath" },
         "quote": {
           "type": "string",
+          "minLength": 1,
           "description": "Code from the file to highlight. Must appear there exactly once."
         },
         "refs": { "type": "array", "items": { "$ref": "#/definitions/ref" } }
@@ -33,8 +40,12 @@
       "required": ["file"],
       "additionalProperties": false,
       "properties": {
-        "file": { "type": "string", "description": "Path from the workspace root." },
-        "quote": { "type": "string", "description": "Code to select. Must appear in the file exactly once." },
+        "file": { "$ref": "#/definitions/filePath" },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Code to select. Must appear in the file exactly once."
+        },
         "label": { "type": "string", "description": "Shown instead of the path." }
       }
     }

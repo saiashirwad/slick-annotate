@@ -1,4 +1,4 @@
-import { errorMessage } from './validation.ts'
+import { errorMessage } from './errors.ts'
 import * as vscode from 'vscode'
 import { activateAnnotations } from './annotations.ts'
 import { excludeFromGit } from './git.ts'

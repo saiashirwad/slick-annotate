@@ -1,7 +1,7 @@
 import { extname } from 'node:path'
 import type { Range, Session } from './session.ts'
 
-export function format(session: Session) {
+export function formatSession(session: Session) {
   const printedThreads = new Set<string>()
   const blocks: string[] = []
 

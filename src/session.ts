@@ -55,7 +55,7 @@ export function load(root: string): Session {
   return parseSession(readFileSync(path, 'utf8'))
 }
 
-export function parseSession(source: string): Session {
+function parseSession(source: string): Session {
   const session = v.parse(Session, JSON.parse(source))
   const ids = new Set<string>()
   const anchors = new Map<string, ThreadAnchor>()

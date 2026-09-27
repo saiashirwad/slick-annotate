@@ -1,6 +1,6 @@
 // @ts-check
-/** @typedef {import('../src/tour-data.ts').FromPage} FromPage */
-/** @typedef {import('../src/tour-data.ts').ToPage} ToPage */
+/** @typedef {import('../src/tour-messages.ts').FromPage} FromPage */
+/** @typedef {import('../src/tour-messages.ts').ToPage} ToPage */
 
 const vscode = acquireVsCodeApi()
 
