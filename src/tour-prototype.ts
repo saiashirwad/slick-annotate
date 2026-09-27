@@ -1,6 +1,6 @@
 // Throwaway Tour player for #6: file-backed, no agent bridge yet.
 import * as vscode from 'vscode'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 type Step = { title: string; body: string; file?: string; quote?: string }
@@ -9,14 +9,14 @@ type Tour = { title: string; steps: Step[] }
 
 export function activateTour(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder) {
   const path = join(folder.uri.fsPath, '.slick', 'tour.json')
+  // The current step's text, shown in VS Code's own Markdown preview beside the code.
+  const page = vscode.Uri.joinPath(folder.uri, '.slick', 'step.md')
   let tour: Tour | undefined
   let current = context.workspaceState.get('slick.tourIndex', 0)
   let active = !context.workspaceState.get('slick.tourEnded', false)
-  let thread: vscode.CommentThread | undefined
   let place: { uri: vscode.Uri; range: vscode.Range } | undefined
   let revision = 0
   const changed = new vscode.EventEmitter<void>()
-  const controller = vscode.comments.createCommentController('slick-tour', 'Slick Tour')
 
   const decoration = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
@@ -48,10 +48,15 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   }
 
   function clear() {
-    thread?.dispose()
-    thread = undefined
     place = undefined
     decorate()
+  }
+
+  async function showText(step: Step) {
+    const heading = `${current + 1}/${tour!.steps.length} · ${tour!.title}`
+    writeFileSync(page.fsPath, `<sub>${heading}</sub>\n\n# ${step.title}\n\n${step.body}\n`)
+    await vscode.commands.executeCommand('markdown.showLockedPreviewToSide', page)
+    await vscode.commands.executeCommand('markdown.preview.refresh')
   }
 
   function update() {
@@ -71,56 +76,38 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     if (!step) return
 
     try {
-      // Text-only steps use a read-only native editor, not a webview or an unrelated code file.
-      const uri = step.file
-        ? vscode.Uri.joinPath(folder.uri, step.file)
-        : vscode.Uri.from({ scheme: 'slick-tour', path: '/Tour.md', query: String(current) })
+      if (!step.file) {
+        if (navigate) await showText(step)
 
+        return
+      }
+
+      const uri = vscode.Uri.joinPath(folder.uri, step.file)
       const document = await vscode.workspace.openTextDocument(uri)
 
       if (version !== revision) return
-      let range: vscode.Range | undefined
 
-      if (step.file && step.quote) {
+      if (step.quote) {
         const text = document.getText()
         const start = text.indexOf(step.quote)
 
         if (start !== -1 && text.indexOf(step.quote, start + 1) === -1) {
-          range = new vscode.Range(document.positionAt(start), document.positionAt(start + step.quote.length))
-          const last = range.end.character === 0 && range.end.line > range.start.line ? range.end.line - 1 : range.end.line
-          range = new vscode.Range(range.start.line, 0, last, document.lineAt(last).range.end.character)
-          place = { uri, range }
+          const end = document.positionAt(start + step.quote.length)
+          const last = end.character === 0 && end.line > document.positionAt(start).line ? end.line - 1 : end.line
+          place = { uri, range: new vscode.Range(document.positionAt(start).line, 0, last, document.lineAt(last).range.end.character) }
         }
       }
 
-      const comment: vscode.Comment = {
-        author: { name: 'Tour' },
-        body: new vscode.MarkdownString(`### ${step.title}\n\n${step.body}`),
-        mode: vscode.CommentMode.Preview,
-      }
-
-      thread = controller.createCommentThread(uri, range ?? new vscode.Range(0, 0, 0, 0), [comment])
-
-      if (!range) thread.range = undefined
-      thread.canReply = false
-      thread.label = `${tour!.title} · ${current + 1}/${tour!.steps.length}`
-      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded
       decorate()
 
       if (!navigate) return
-      const editor = await vscode.window.showTextDocument(document, { preview: true })
+      await showText(step)
+      const editor = await vscode.window.showTextDocument(document, { viewColumn: vscode.ViewColumn.One })
 
-      if (version !== revision) return
-
-      if (range) {
-        editor.selection = new vscode.Selection(range.start, range.start)
-        editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
-      } else {
-        editor.selection = new vscode.Selection(0, 0, 0, 0)
-      }
-
+      if (version !== revision || !place) return
+      editor.selection = new vscode.Selection(place.range.start, place.range.start)
+      editor.revealRange(place.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
       decorate()
-      await thread?.reveal(comment, { focus: vscode.CommentThreadFocus.Comment })
     } catch (error) {
       if (version === revision) view.message = `Cannot open this step: ${String(error)}`
     }
@@ -158,14 +145,11 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
   const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, '.slick/tour.json'))
   context.subscriptions.push(
-    controller, decoration, view, changed, watcher,
-    vscode.workspace.registerTextDocumentContentProvider('slick-tour', {
-      provideTextDocumentContent: () => '# Tour\n\nRead the expanded Tour comment below.\n',
-    }),
+    decoration, view, changed, watcher,
     watcher.onDidCreate(reload), watcher.onDidChange(reload), watcher.onDidDelete(reload),
     vscode.window.onDidChangeVisibleTextEditors(decorate),
     vscode.workspace.onDidChangeTextDocument(({ document }) => {
-      if (thread?.uri.toString() === document.uri.toString()) void show(false)
+      if (place?.uri.toString() === document.uri.toString()) void show(false)
     }),
     vscode.commands.registerCommand('slick.tourStep', go),
     vscode.commands.registerCommand('slick.tourNext', () => go(current + 1)),
