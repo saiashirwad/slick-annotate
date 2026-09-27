@@ -208,7 +208,8 @@ function estimate(step: Step) {
   const lines = step.body.split(/\n\s*\n/).reduce((sum, paragraph) => sum + Math.ceil(paragraph.length / 80), 0)
   const pixels = 12 + 20 + 30 + lines * 22.4 + 8 * step.body.split(/\n\s*\n/).length + 22
 
-  return Math.ceil(pixels / lineHeight())
+  // One spare line, so an estimate that falls a little short doesn't force a rebuild.
+  return Math.ceil(pixels / lineHeight()) + 1
 }
 
 // Pixels per editor line, following VS Code's rules for `editor.lineHeight`.
@@ -232,6 +233,8 @@ function page(meta: string, body: string) {
   html, body { margin: 0; background: transparent; }
   body { padding: 4px 0 8px; font: 14px/1.6 var(--vscode-font-family); color: var(--vscode-editor-foreground); }
   .card { max-width: 72ch; padding: 10px 16px 12px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35))); border-radius: 6px; background: var(--vscode-editorWidget-background); }
+  .card { animation: in 140ms ease-out; }
+  @keyframes in { from { opacity: 0; transform: translateY(-2px); } }
   .meta { font-size: 12px; opacity: 0.6; }
   h1 { margin: 2px 0 6px; font-size: 16px; font-weight: 600; }
   p, ul, ol { margin: 0 0 8px; } .card > :last-child { margin-bottom: 0; }
