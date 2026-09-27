@@ -23,6 +23,9 @@ section {
 
 section:not(.open) {
   padding-bottom: 8px;
+}
+
+section:not(.current) {
   cursor: pointer;
 }
 

@@ -50,15 +50,17 @@ document.addEventListener('click', (event) => {
     return
   }
 
-  // Clicking a closed step opens and focuses it. Clicking an open step's header closes it, dropping focus if it had
-  // it. Clicks in a step's text do nothing, so reading never pulls the editor around.
-  if (!section.classList.contains('open')) {
-    setOpen(section, true)
-    vscode.postMessage({ go: indexOf(section) })
-  } else if (event.target.closest('.meta, h2')) {
+  // Clicking an open step's header closes it, dropping focus if it had it. Any other click focuses the step (and
+  // opens it), except in the text of the step that's already focused, so reading never pulls the editor back.
+  const current = section.classList.contains('current')
+
+  if (section.classList.contains('open') && event.target.closest('.meta, h2')) {
     setOpen(section, false)
 
-    if (section.classList.contains('current')) vscode.postMessage({ unfocus: true })
+    if (current) vscode.postMessage({ unfocus: true })
+  } else if (!current) {
+    setOpen(section, true)
+    vscode.postMessage({ go: indexOf(section) })
   }
 })
 

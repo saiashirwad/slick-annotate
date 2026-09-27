@@ -8,19 +8,16 @@ type Step = { title: string; body: string; details?: string; file?: string; quot
 
 type Ref = { file: string; quote?: string; label?: string }
 
-type Rendered = { body: string; details?: string }
-
 type Tour = { title: string; steps: Step[] }
 
 // Plays `.slick/tour.json`: the whole tour as a document in the sidebar, with the current step's code highlighted.
 export function activateTour(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder) {
   const path = join(folder.uri.fsPath, '.slick', 'tour.json')
-  const media = vscode.Uri.joinPath(context.extensionUri, 'media')
-  const mermaid = vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'mermaid', 'dist')
+  const root = context.extensionUri
   let tour: Tour | undefined
   let problem: string | undefined
-  // Each step's Markdown as HTML, rendered once per load by VS Code's own Markdown engine.
-  let rendered: Rendered[] = []
+  // Each step as HTML for the document, rendered once per load.
+  let sections: string[] = []
   let current = context.workspaceState.get('slick.tourStep', 0)
   // Whether `current` is focused: its code highlighted. Closing it in the document unfocuses it.
   let focused = context.workspaceState.get('slick.tourFocused', true)
@@ -43,18 +40,19 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   function draw() {
     if (!view) return
     view.title = tour?.title ?? 'Tour'
-    view.webview.html = page(view.webview, media, mermaid, tour, rendered, problem)
+    view.webview.html = page(view.webview, root, sections, problem)
   }
 
   // Tells the document and the keybindings which step is focused.
   function mark(jump: boolean) {
     const count = tour?.steps.length ?? 0
+    const shown = count > 0 && focused
     void vscode.commands.executeCommand('setContext', 'slick.tourLoaded', !!tour)
     void vscode.commands.executeCommand('setContext', 'slick.tourActive', count > 0)
-    void vscode.commands.executeCommand('setContext', 'slick.tourFocused', count > 0 && focused)
-    void view?.webview.postMessage({ current: count > 0 && focused ? current : -1, jump })
+    void vscode.commands.executeCommand('setContext', 'slick.tourFocused', shown)
+    void view?.webview.postMessage({ current: shown ? current : -1, jump })
 
-    if (view) view.description = count > 0 && focused ? `${current + 1} of ${count}` : undefined
+    if (view) view.description = shown ? `${current + 1} of ${count}` : undefined
   }
 
   // Highlights the current step's code; `reveal` also opens it in the editor.
@@ -128,32 +126,39 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     rmSync(path, { force: true })
   }
 
+  // Reads and renders the tour first, then swaps it in, so nothing ever sees a tour without its HTML.
   async function load() {
-    tour = undefined
+    let next: Tour | undefined
+    let html: string[] = []
     problem = undefined
-    rendered = []
 
     try {
-      if (existsSync(path)) {
-        // SAFETY: the tour file is written by an agent to the documented shape, like session.json.
-        tour = JSON.parse(readFileSync(path, 'utf8')) as Tour
-        current = Math.max(0, Math.min(current, tour.steps.length - 1))
-
-        rendered = await Promise.all(
-          tour.steps.map(async (step) => ({
-            body: await render(step.body),
-            details: step.details === undefined ? undefined : await render(step.details),
-          })),
-        )
-      }
+      // SAFETY: the tour file is written by an agent to the documented shape, like session.json.
+      next = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as Tour) : undefined
+      html = await Promise.all(next?.steps.map(section) ?? [])
     } catch (error) {
-      tour = undefined
+      next = undefined
       problem = `Can't read .slick/tour.json: ${String(error)}`
     }
+
+    tour = next
+    sections = html
+    current = Math.max(0, Math.min(current, (tour?.steps.length ?? 1) - 1))
 
     draw()
     mark(true)
     void show(false)
+  }
+
+  // What the document asks for: focus a step, drop focus, open a link to code, or say it has (re)loaded.
+  function receive(message: { go?: number; unfocus?: boolean; open?: string; ready?: boolean }) {
+    if (message.go !== undefined) go(message.go)
+
+    if (message.unfocus) unfocus()
+
+    if (message.open !== undefined) void open(message.open)
+
+    if (message.ready) mark(true)
   }
 
   const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, '.slick/tour.json'))
@@ -171,19 +176,8 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       {
         resolveWebviewView: (resolved) => {
           view = resolved
-          view.webview.options = { enableScripts: true, localResourceRoots: [media, mermaid] }
-
-          view.webview.onDidReceiveMessage(
-            (message: { go?: number; open?: string; unfocus?: boolean; ready?: boolean }) => {
-              if (message.go !== undefined) go(message.go)
-
-              if (message.unfocus) unfocus()
-
-              if (message.open !== undefined) void open(message.open)
-
-              if (message.ready) mark(true)
-            },
-          )
+          view.webview.options = { enableScripts: true, localResourceRoots: [root] }
+          view.webview.onDidReceiveMessage(receive)
 
           view.onDidDispose(() => (view = undefined))
           draw()
@@ -209,8 +203,6 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   void load()
 }
 
-const render = (markdown: string) => vscode.commands.executeCommand<string>('markdown.api.render', markdown)
-
 // The whole lines covering `quote`, if it occurs exactly once in the document.
 function locate(document: vscode.TextDocument, quote: string) {
   const text = document.getText()
@@ -225,6 +217,24 @@ function locate(document: vscode.TextDocument, quote: string) {
   return new vscode.Range(first, 0, last, document.lineAt(last).range.end.character)
 }
 
+const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
+
+// Markdown to HTML with VS Code's own engine, which also turns mermaid fences into `.mermaid` elements.
+const markdown = (text: string) => vscode.commands.executeCommand<string>('markdown.api.render', text)
+
+async function section(step: Step, index: number) {
+  const file = step.file ? `<span class="file">${escape(step.file)}</span>` : ''
+  const refs = step.refs?.length ? `<div class="refs">${step.refs.map(link).join('')}</div>` : ''
+  const details = step.details ? `<div class="details">${await markdown(step.details)}</div>` : ''
+  const more = details && '<button class="more">Show more</button>'
+
+  return `<section data-index="${index}">
+  <div class="meta"><span class="number">${index + 1}</span>${file}</div>
+  <h2>${escape(step.title)}</h2>
+  <div class="body">${await markdown(step.body)}${refs}${details}${more}</div>
+</section>`
+}
+
 // A ref is the same kind of link the text can hold: `file#quote`.
 function link({ file, quote, label }: Ref) {
   const href = quote ? `${file}#${encodeURIComponent(quote)}` : file
@@ -232,47 +242,27 @@ function link({ file, quote, label }: Ref) {
   return `<a class="ref" href="${escape(href)}">${escape(label ?? file)}</a>`
 }
 
-const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
-
-function page(
-  webview: vscode.Webview,
-  media: vscode.Uri,
-  mermaid: vscode.Uri,
-  tour: Tour | undefined,
-  rendered: Rendered[],
-  problem: string | undefined,
-) {
-  const asset = (root: vscode.Uri, file: string) => webview.asWebviewUri(vscode.Uri.joinPath(root, file))
-  const diagrams = rendered.some(({ body, details }) => `${body}${details}`.includes('class="mermaid"'))
-
-  const content = tour
-    ? tour.steps
-        .map(
-          (step, index) => `<section data-index="${index}">
-  <div class="meta"><span class="number">${index + 1}</span>${step.file ? `<span class="file">${escape(step.file)}</span>` : ''}</div>
-  <h2>${escape(step.title)}</h2>
-  <div class="body">
-    ${rendered[index]?.body ?? ''}
-    ${step.refs?.length ? `<div class="refs">${step.refs.map(link).join('')}</div>` : ''}
-    ${rendered[index]?.details ? `<div class="details">${rendered[index].details}</div><button class="more">Show more</button>` : ''}
-  </div>
-</section>`,
-        )
-        .join('\n')
-    : `<p class="empty">${escape(problem ?? 'No tour yet. An agent writes one to .slick/tour.json.')}</p>`
-
+function page(webview: vscode.Webview, root: vscode.Uri, sections: string[], problem: string | undefined) {
+  const asset = (path: string) => webview.asWebviewUri(vscode.Uri.joinPath(root, path))
+  const empty = problem ?? 'No tour yet. An agent writes one to .slick/tour.json.'
+  const content = sections.length ? sections.join('\n') : `<p class="empty">${escape(empty)}</p>`
+  const diagrams = content.includes('class="mermaid"')
+  const mermaid = diagrams ? `<script src="${asset('node_modules/mermaid/dist/mermaid.min.js')}"></script>` : ''
   // Mermaid draws its diagrams with inline styles, hence 'unsafe-inline' for styles only.
+  const source = webview.cspSource
+  const csp = `default-src 'none'; img-src ${source} data:; style-src ${source} 'unsafe-inline'; script-src ${source};`
+
   return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource};">
-<link rel="stylesheet" href="${asset(media, 'tour.css')}">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<link rel="stylesheet" href="${asset('media/tour.css')}">
 </head>
 <body>
 ${content}
-${diagrams ? `<script src="${asset(mermaid, 'mermaid.min.js')}"></script>` : ''}
-<script src="${asset(media, 'tour.js')}"></script>
+${mermaid}
+<script src="${asset('media/tour.js')}"></script>
 </body>
 </html>`
 }
