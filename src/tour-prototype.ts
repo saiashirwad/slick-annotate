@@ -127,7 +127,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
         view = resolved
         view.webview.options = { enableScripts: true, localResourceRoots: [mermaid] }
         view.webview.onDidReceiveMessage((message: { go?: number; ready?: boolean }) => {
-          if (message.go !== undefined) go(message.go, false)
+          if (message.go !== undefined) go(message.go)
 
           if (message.ready) mark(true)
         })
@@ -167,7 +167,7 @@ function page(webview: vscode.Webview, mermaid: vscode.Uri, tour: Tour | undefin
     .map((step, i) => `<section data-i="${i}">
   <div class="meta"><span>Step ${i + 1}</span>${step.file ? `<span class="source">${escape(step.file)}</span>` : ''}</div>
   <h2>${escape(step.title)}</h2>
-  ${sections[i] ?? ''}
+  <div class="body">${sections[i] ?? ''}</div>
 </section>`)
     .join('\n')
 
@@ -180,11 +180,16 @@ function page(webview: vscode.Webview, mermaid: vscode.Uri, tour: Tour | undefin
   section { margin: 0 -8px 10px; padding: 10px 12px 12px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
   section:hover { background: var(--vscode-list-hoverBackground); }
   section.current { border-color: var(--vscode-focusBorder); background: var(--vscode-editorWidget-background); cursor: default; }
+  /* Only the current step is open. Collapsed by height, not display, so mermaid can still measure hidden diagrams. */
+  section:not(.current) { padding-bottom: 8px; }
+  section:not(.current) h2 { margin-bottom: 0; }
+  section:not(.current) .body { height: 0; overflow: hidden; }
+  .body > :last-child { margin-bottom: 0; }
   .meta { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: var(--vscode-descriptionForeground); }
   .source { font-family: var(--vscode-editor-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   h2 { margin: 2px 0 6px; font-size: 15px; font-weight: 600; }
   h3, h4 { margin: 10px 0 4px; font-size: 14px; font-weight: 600; }
-  p, ul, ol, table { margin: 0 0 8px; } section > :last-child { margin-bottom: 0; }
+  p, ul, ol, table { margin: 0 0 8px; }
   ul, ol { padding-left: 20px; }
   code { font: 0.9em var(--vscode-editor-font-family); padding: 1px 4px; border-radius: 3px; background: var(--vscode-textCodeBlock-background); }
   pre { margin: 0 0 8px; padding: 8px 12px; border-radius: 4px; overflow-x: auto; background: var(--vscode-textCodeBlock-background); }
