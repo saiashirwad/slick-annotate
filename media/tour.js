@@ -3,6 +3,14 @@ const vscode = acquireVsCodeApi()
 
 document.addEventListener('click', (event) => {
   const section = event.target.closest('section')
+  const more = event.target.closest('.more')
+
+  // "Show more" opens the step's longer explanation, without leaving the step.
+  if (more) {
+    more.textContent = section.classList.toggle('expanded') ? 'Show less' : 'Show more'
+
+    return
+  }
 
   if (!section || event.target.closest('a') || String(getSelection())) return
   vscode.postMessage({ go: Number(section.dataset.index) })

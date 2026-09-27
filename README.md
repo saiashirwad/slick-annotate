@@ -23,7 +23,8 @@ A coding agent can walk you through code by writing `.slick/tour.json`:
   "steps": [
     {
       "title": "Where a request comes in",
-      "body": "Markdown, including mermaid diagrams.",
+      "body": "A short explanation, in Markdown.",
+      "details": "Optional: the longer one, shown on \"Show more\". Mermaid diagrams work in both.",
       "file": "src/server.ts",
       "quote": "exact code from the file"
     }
@@ -31,7 +32,7 @@ A coding agent can walk you through code by writing `.slick/tour.json`:
 }
 ```
 
-The **Tour** view in the activity bar shows the whole tour as one document, with only the current step open. Clicking a step or pressing Alt+] / Alt+[ highlights its code. A step's `quote` must appear exactly once in its `file`; otherwise the file opens with nothing highlighted.
+The **Tour** view in the activity bar shows the whole tour as one document, with only the current step open. Clicking a step or pressing Alt+] / Alt+[ highlights its code. A step's `quote` must appear exactly once in its `file`; otherwise the file opens with nothing highlighted. The highlight colour is `slick.tourHighlight`, which you can change in `workbench.colorCustomizations`.
 
 | Command                   | Where                                |
 | ------------------------- | ------------------------------------ |
@@ -39,10 +40,11 @@ The **Tour** view in the activity bar shows the whole tour as one document, with
 | Slick: Previous Step      | Alt+[, Tour view title bar           |
 | Slick: Go to Current Step | Command palette, Tour view title bar |
 | Slick: End Tour           | Command palette, Tour view title bar |
+| Slick: Clear Tour         | Command palette, Tour view "…" menu  |
 
 ## Install
 
-1. Clone the repo.
+1. Clone the repo and run `npm install` (tour diagrams need mermaid).
 2. In VS Code, run **Developer: Install Extension from Location…** and pick the repo folder.
 3. Add this to `~/.vscode/argv.json`, then quit and reopen VS Code:
 

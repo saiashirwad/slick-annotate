@@ -107,6 +107,12 @@
         "category": "Slick",
         "icon": "$(close)",
         "enablement": "slick.tourActive"
+      },
+      {
+        "command": "slick.tourClear",
+        "title": "Clear Tour",
+        "category": "Slick",
+        "enablement": "slick.tourLoaded"
       }
     ],
     "keybindings": [
@@ -210,6 +216,11 @@
           "command": "slick.tourEnd",
           "group": "navigation@4",
           "when": "view == slick.tour && slick.tourActive"
+        },
+        {
+          "command": "slick.tourClear",
+          "group": "tour",
+          "when": "view == slick.tour && slick.tourLoaded"
         }
       ],
       "editor/title": [
@@ -226,7 +237,19 @@
           "when": "!explorerResourceIsFolder"
         }
       ]
-    }
+    },
+    "colors": [
+      {
+        "id": "slick.tourHighlight",
+        "description": "Background of the current tour step's lines.",
+        "defaults": {
+          "dark": "#3794ff1f",
+          "light": "#0066bf14",
+          "highContrast": "#3794ff33",
+          "highContrastLight": "#0066bf1f"
+        }
+      }
+    ]
   },
   "scripts": {
     "check": "tsc --noEmit && oxlint src",

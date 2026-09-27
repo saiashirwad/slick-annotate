@@ -44,6 +44,31 @@ section:not(.current) .body {
   overflow: hidden;
 }
 
+/* A step's longer explanation stays folded until "Show more", hidden by height for the same reason. */
+
+section:not(.expanded) .details {
+  height: 0;
+  overflow: hidden;
+}
+
+.more {
+  padding: 0;
+  border: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--vscode-textLink-foreground);
+  background: none;
+  cursor: pointer;
+}
+
+.more:hover {
+  text-decoration: underline;
+}
+
+section.expanded .more {
+  margin-top: 4px;
+}
+
 .meta {
   display: flex;
   gap: 8px;

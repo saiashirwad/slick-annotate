@@ -1,8 +1,11 @@
 import * as vscode from 'vscode'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
-type Step = { title: string; body: string; file?: string; quote?: string }
+// `body` is the short explanation shown when the step opens; `details` is the longer one behind "Show more".
+type Step = { title: string; body: string; details?: string; file?: string; quote?: string }
+
+type Rendered = { body: string; details?: string }
 
 type Tour = { title: string; steps: Step[] }
 
@@ -13,8 +16,8 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   const mermaid = vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'mermaid', 'dist')
   let tour: Tour | undefined
   let problem: string | undefined
-  // Each step's body as HTML, rendered once per load by VS Code's own Markdown engine.
-  let bodies: string[] = []
+  // Each step's Markdown as HTML, rendered once per load by VS Code's own Markdown engine.
+  let rendered: Rendered[] = []
   let current = context.workspaceState.get('slick.tourStep', 0)
   let ended = context.workspaceState.get('slick.tourEnded', false)
   let place: { uri: vscode.Uri; range: vscode.Range } | undefined
@@ -24,7 +27,7 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
   const highlight = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
-    backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
+    backgroundColor: new vscode.ThemeColor('slick.tourHighlight'),
   })
 
   function decorate() {
@@ -36,12 +39,13 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
   function draw() {
     if (!view) return
     view.title = tour?.title ?? 'Tour'
-    view.webview.html = page(view.webview, media, mermaid, tour, bodies, problem)
+    view.webview.html = page(view.webview, media, mermaid, tour, rendered, problem)
   }
 
   // Tells the document and the keybindings which step is current.
   function mark(jump: boolean) {
     const count = ended ? 0 : (tour?.steps.length ?? 0)
+    void vscode.commands.executeCommand('setContext', 'slick.tourLoaded', !!tour)
     void vscode.commands.executeCommand('setContext', 'slick.tourActive', count > 0)
     void view?.webview.postMessage({ current: count > 0 ? current : -1, jump })
 
@@ -94,10 +98,22 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     void show(false)
   }
 
+  async function clear() {
+    const answer = await vscode.window.showWarningMessage('Delete the tour?', { modal: true }, 'Delete')
+
+    if (answer !== 'Delete') return
+    current = 0
+    ended = false
+    void context.workspaceState.update('slick.tourStep', 0)
+    void context.workspaceState.update('slick.tourEnded', false)
+    // The watcher sees the file go and reloads.
+    rmSync(path, { force: true })
+  }
+
   async function load() {
     tour = undefined
     problem = undefined
-    bodies = []
+    rendered = []
 
     try {
       if (existsSync(path)) {
@@ -105,8 +121,11 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
         tour = JSON.parse(readFileSync(path, 'utf8')) as Tour
         current = Math.max(0, Math.min(current, tour.steps.length - 1))
 
-        bodies = await Promise.all(
-          tour.steps.map((step) => vscode.commands.executeCommand<string>('markdown.api.render', step.body)),
+        rendered = await Promise.all(
+          tour.steps.map(async (step) => ({
+            body: await render(step.body),
+            details: step.details === undefined ? undefined : await render(step.details),
+          })),
         )
       }
     } catch (error) {
@@ -160,10 +179,13 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     vscode.commands.registerCommand('slick.tourPrevious', () => go(current - 1)),
     vscode.commands.registerCommand('slick.tourCurrent', () => go(current)),
     vscode.commands.registerCommand('slick.tourEnd', end),
+    vscode.commands.registerCommand('slick.tourClear', clear),
   )
 
   void load()
 }
+
+const render = (markdown: string) => vscode.commands.executeCommand<string>('markdown.api.render', markdown)
 
 // The whole lines covering `quote`, if it occurs exactly once in the document.
 function locate(document: vscode.TextDocument, quote: string) {
@@ -186,11 +208,11 @@ function page(
   media: vscode.Uri,
   mermaid: vscode.Uri,
   tour: Tour | undefined,
-  bodies: string[],
+  rendered: Rendered[],
   problem: string | undefined,
 ) {
   const asset = (root: vscode.Uri, file: string) => webview.asWebviewUri(vscode.Uri.joinPath(root, file))
-  const diagrams = bodies.some((body) => body.includes('class="mermaid"'))
+  const diagrams = rendered.some(({ body, details }) => `${body}${details}`.includes('class="mermaid"'))
 
   const content = tour
     ? tour.steps
@@ -198,7 +220,10 @@ function page(
           (step, index) => `<section data-index="${index}">
   <div class="meta"><span class="number">${index + 1}</span>${step.file ? `<span class="file">${escape(step.file)}</span>` : ''}</div>
   <h2>${escape(step.title)}</h2>
-  <div class="body">${bodies[index] ?? ''}</div>
+  <div class="body">
+    ${rendered[index]?.body ?? ''}
+    ${rendered[index]?.details ? `<div class="details">${rendered[index].details}</div><button class="more">Show more</button>` : ''}
+  </div>
 </section>`,
         )
         .join('\n')
