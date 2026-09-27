@@ -1,0 +1,48 @@
+{
+  "title": "How Tandem works",
+  "steps": [
+    {
+      "id": "two-features",
+      "title": "Two independent features",
+      "body": "Annotations and walks start independently. They share the workspace folder; **Submit Review** is where their output meets.",
+      "file": "src/extension.ts",
+      "quote": "  activateAnnotations(context, folder)\n  const walk = activateWalk(context, folder)",
+      "refs": [
+        {
+          "label": "the handoff",
+          "file": "src/submit.ts",
+          "quote": "export async function submitReview("
+        }
+      ]
+    },
+    {
+      "id": "snapshot",
+      "title": "Keep the code you were reading",
+      "body": "An annotation stores its file, range, and **snippet**. Later edits do not replace that snapshot. A thread can hold several annotations at the same location.",
+      "file": "src/session.ts",
+      "quote": "const ThreadAnchor = v.object({\n  threadId: v.pipe(v.string(), v.nonEmpty()),\n  file: FilePath,\n  range: v.optional(Range),\n  snippet: v.string(),\n})"
+    },
+    {
+      "id": "copy",
+      "title": "One paste, with the context attached",
+      "body": "Copy each annotation with its path and snippet. Print the snippet only once per thread, so follow-up questions do not repeat the same code.",
+      "file": "src/copy.ts",
+      "quote": "    if (annotation.range && !printedThreads.has(annotation.threadId)) {\n      parts.push(fenced(annotation.snippet, extname(annotation.file).slice(1)))\n    }",
+      "refs": [
+        {
+          "label": "save a session",
+          "file": "src/session.ts",
+          "quote": "export function save("
+        }
+      ]
+    },
+    {
+      "id": "approval",
+      "title": "An approval belongs to a specific proposal",
+      "body": "When the agent revises a walk, responses follow the step IDs. An approval survives only while the proposal is unchanged.",
+      "file": "src/review.ts",
+      "quote": "    const approved = step?.proposal && entry.approved && unchanged(entry.approved, step) ? entry.approved : undefined",
+      "details": "The comparison includes the body, details, code quote, and diff. A new walk title starts a new review."
+    }
+  ]
+}

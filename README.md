@@ -1,55 +1,106 @@
 # Tandem
 
-- A VS Code extension for reading code with a coding agent.
-- Write annotations on code and copy them into your next prompt.
-- Follow agent-written walks through the code, and approve or respond to what the agent proposes.
+Tandem lets you annotate code in VS Code and follow walks through it written by a coding agent. Collect questions as you read, review proposed changes beside the code, and copy your annotations and review back to the agent.
 
-## Install
+## Installation
 
-- Requires **VS Code 1.138 or later** and a trusted workspace folder on disk. Virtual workspaces and vscode.dev are not supported. Multi-root workspaces use the first folder.
-- To install a packaged release, run **Extensions: Install from VSIX…** and choose `tandem-0.0.1.vsix`.
+Install [Tandem from the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=saiashirwad.tandem), or run:
 
-## Your first walk
+```sh
+code --install-extension saiashirwad.tandem
+```
 
-Open a project, then give your coding agent this prompt:
-
-> Write a Tandem walk explaining this project's main execution path. Follow https://github.com/saiashirwad/tandem/blob/main/WALKS.md and save it to `.tandem/walk.json`. Use a few focused steps with real file paths and unique, exact code quotes.
-
-Open **Walk** in the activity bar to follow it. Tandem works through local files and copied text; no agent account or API key is required by the extension.
+Requires VS Code 1.138 or later and a trusted workspace folder on disk. In a multi-root workspace, Tandem uses the first folder. Virtual workspaces and vscode.dev are not supported.
 
 ## Annotations
 
-- Select code and press **Alt+A** to write an annotation. With nothing selected, press it inside an existing thread to add to it.
-- Use **Annotate File** in the editor title bar or explorer context menu for an annotation about the whole file.
-- Browse your annotations in VS Code's **Comments** panel.
-- **Copy Tandem Session** copies your annotations with file paths and code snippets, ready to paste into an agent.
-- **Clear Tandem Session** deletes every annotation. Copy and Clear are in the Comments panel title bar and command palette.
+Select some code and press **Alt+A**. Type your annotation and press Enter to save it. Annotations appear as native comment threads beside the code and in VS Code's **Comments** panel.
+
+![An annotation attached to the code that copies a thread's snippet](./docs/images/annotations.png)
+
+- To add to an existing thread, place the cursor inside its range with nothing selected and press **Alt+A**.
+- To annotate a whole file, use **Annotate File** in the editor title bar or the explorer context menu.
+- To edit or delete an annotation, use the buttons on the annotation.
+
+Run **Copy Tandem Session** to copy all your annotations, with file paths and code snippets, ready to paste into an agent. Snippets keep the code as it was when you annotated it, even if the file changes later.
+
+**Clear Tandem Session** deletes all annotations. Both commands are available in the Comments panel title bar and the command palette.
 
 ## Walks
 
-- Have your agent write a walk to `.tandem/walk.json` using the [walk format](./WALKS.md): to explain some code, to propose a change before making it, or both.
-- Open **Walk** in the activity bar.
-- Click a step to open its file and highlight its code.
-- Use **Alt+] / Alt+[** to move between steps.
-- A proposal can show its change as a diff. **Open diff** shows it in VS Code's diff editor.
-- Approve a proposal with its **Approve this change** checkbox, or **Alt+Enter** on the focused step.
-- Write a response on any step in the box under it.
-- **Submit Review** (Walk view title bar) copies your approvals, responses and annotations, ready to paste into the agent. It also saves a copy to `.tandem/review.json` for the agent to read.
-- Your place and your review are remembered when you leave and come back, and when the agent revises the walk. An approval is kept only if the proposal hasn't changed.
+A walk is a sequence of steps an agent writes to explain code, propose changes, or both. Each step can point to code in your project, include a diagram, and link to other files.
 
-## Workspace
+To try one, give your agent this prompt:
 
-- Annotations are saved in `.tandem/session.json`; walks live in `.tandem/walk.json`, and your review of one in `.tandem/review.json`. The folder is excluded from git.
-- Multi-root workspaces use the first folder. Only files inside it can be annotated.
+> Write a Tandem walk explaining this project's main execution path. Follow https://github.com/saiashirwad/tandem/blob/main/WALKS.md and save it to `.tandem/walk.json`. Use a few focused steps with real file paths and unique, exact code quotes.
 
-## Development and packaging
+Open **Walk** in the activity bar. Click a step to open its file and highlight the relevant code, or use **Alt+]** and **Alt+[** to move between steps. Tandem remembers your place when you leave and come back. Saving a new version of the walk updates the view.
 
-- Install Node.js 24 or later (for VS Code's packaging tools) and [Bun](https://bun.sh/) 1.4.0 (the version used in CI). Clone the repository and run `bun install --frozen-lockfile`, then `bun run build`.
-- Run **Developer: Install Extension from Location…** and select the folder. Use `bun run watch` while editing, then **Developer: Reload Window** to pick up rebuilt code. F5 builds before opening an Extension Development Host.
-- `bun run package` checks types, lint, and formatting, bundles the extension with Bun, then writes the VSIX to `dist/`. Bun manages dependencies through `bun.lock` and targets Node.js; users do not need Bun or a separate Node.js installation. The VSIX is self-contained; `vsce` does not collect `node_modules`.
-- Before releasing, install that VSIX in a fresh VS Code profile and check annotations, walks, diagrams, diffs, review submission, and persistence after reload. Repeat on the minimum supported VS Code version.
-- Upload the checked VSIX through the [Marketplace publisher page](https://marketplace.visualstudio.com/manage). CI also packages a downloadable VSIX on pushes and pull requests.
+![Following a walk through Tandem's activation, annotation storage, and clipboard formatting](./docs/images/walk.gif)
 
-## Support and license
+The [example walks](./docs/walks/README.md) follow Tandem's own source code.
 
-[Report a bug or request a feature](https://github.com/saiashirwad/tandem/issues). Licensed under [MIT](./LICENSE).
+### Reviewing proposals
+
+A proposal describes a change the agent intends to make. If it includes a diff, **Open diff** opens it in VS Code's diff editor. Viewing or approving a proposal does not change your files.
+
+Use **Approve this change** to approve a proposal, or press **Alt+Enter** on the focused step. You can write a response below any step, whether it proposes a change or explains existing code.
+
+![Writing a response and approving a proposed change](./docs/images/review.gif)
+
+When you're done, **Submit Review** copies your approvals, responses, and annotations to the clipboard. Paste them back into the agent. The review is also saved to `.tandem/review.json` for the agent to read.
+
+Your review survives reloads. When the agent revises a walk, responses follow their steps and changed proposals lose their approvals. Submitting a review clears nothing.
+
+Tandem works through workspace files and copied text. The extension needs no agent account or API key. See [Writing walks](./WALKS.md) for the format and instructions for agents.
+
+## Commands
+
+Commands are available in the command palette under **Tandem**.
+
+| Command              | Shortcut  | Action                                    |
+| -------------------- | --------- | ----------------------------------------- |
+| Annotate Selection   | Alt+A     | Annotate code or add to a thread          |
+| Annotate File        |           | Annotate the whole file                   |
+| Copy Tandem Session  |           | Copy all annotations with their snippets  |
+| Clear Tandem Session |           | Delete all annotations                    |
+| Next Step            | Alt+]     | Focus the next step                       |
+| Previous Step        | Alt+[     | Focus the previous step                   |
+| Go to Current Step   |           | Return to the focused step's code         |
+| Unfocus Step         |           | Remove the code highlight                 |
+| Toggle Approval      | Alt+Enter | Approve or unapprove the focused proposal |
+| Submit Review        |           | Save and copy the review with annotations |
+| Clear Walk           |           | Delete the walk and its review            |
+
+## Workspace data
+
+Tandem stores its files in `.tandem/` at the workspace root:
+
+- `session.json` — your annotations.
+- `walk.json` — the agent's walk.
+- `review.json` — your approvals and responses.
+
+Tandem adds this folder to `.git/info/exclude`, leaving your project's `.gitignore` unchanged. Clearing annotations leaves the walk alone; clearing the walk leaves annotations alone.
+
+## Development
+
+Install Node.js 24 or later and [Bun](https://bun.sh/) 1.4.0, then run:
+
+```sh
+bun install --frozen-lockfile
+bun run build
+```
+
+Press **F5** to open an Extension Development Host. To use the extension in your regular window, run **Developer: Install Extension from Location…** and select this folder. Run `bun run watch` while editing, then **Developer: Reload Window** after rebuilding.
+
+`bun run package` runs type, lint, and formatting checks and builds a self-contained VSIX in `dist/`. Install it with **Extensions: Install from VSIX…**. Users do not need Bun or a separate Node.js installation. CI also produces a downloadable VSIX on pushes to `main` and pull requests.
+
+Before releasing, try annotations, walks, diagrams, diffs, review submission, and persistence after reload in a fresh VS Code profile, including on the minimum supported version. Upload updates through the [Marketplace publisher page](https://marketplace.visualstudio.com/manage).
+
+## Feedback
+
+[Report a bug or request a feature](https://github.com/saiashirwad/tandem/issues).
+
+## License
+
+[MIT](./LICENSE)

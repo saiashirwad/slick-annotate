@@ -1,0 +1,28 @@
+{
+  "title": "Review the clipboard handoff",
+  "steps": [
+    {
+      "id": "handoff",
+      "title": "Where your review goes",
+      "body": "Submit Review copies the review and your annotations together. The agent receives the context in one paste.",
+      "file": "src/submit.ts",
+      "quote": "    annotations = formatSession(load(root))"
+    },
+    {
+      "id": "wording",
+      "title": "Make the confirmation more specific",
+      "proposal": true,
+      "body": "Say explicitly that the review was copied to the clipboard. This is a wording-only proposal; the submission behavior stays the same.",
+      "file": "src/submit.ts",
+      "quote": "    vscode.window.setStatusBarMessage('Review submitted and copied', 2000)",
+      "diff": "-vscode.window.setStatusBarMessage('Review submitted and copied', 2000)\n+vscode.window.setStatusBarMessage('Review copied to clipboard', 2000)"
+    },
+    {
+      "id": "keep-review",
+      "title": "Keep the review after submission",
+      "body": "Submitting does not clear responses or approvals. You can return to the walk and continue the conversation.",
+      "file": "src/review.ts",
+      "quote": "export function saveReview(root: string, review: Review) {"
+    }
+  ]
+}
