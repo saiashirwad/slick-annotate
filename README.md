@@ -47,10 +47,3 @@ The **Tour** view in the activity bar shows the whole tour as one document. Clic
 
 1. Clone the repo and run `npm install` (tour diagrams need mermaid).
 2. In VS Code, run **Developer: Install Extension from Location…** and pick the repo folder.
-3. Add this to `~/.vscode/argv.json`, then quit and reopen VS Code:
-
-   ```json
-   "enable-proposed-api": ["saiashirwad.slick-annotate"]
-   ```
-
-It isn't on the Marketplace because it uses a proposed VS Code API, which published extensions can't.

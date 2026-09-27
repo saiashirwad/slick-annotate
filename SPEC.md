@@ -8,8 +8,8 @@ Terms are defined in [CONTEXT.md](./CONTEXT.md).
 
 ## Annotating
 
-- **Annotate selection** — select some code and press Alt+A, or click the "+" in the margin. The comment box opens focused; save with Cmd+Enter. The annotation covers whole lines, and those lines are saved with it as its snippet. After saving, the thread collapses to its margin icon.
-- **Add to a thread** — with nothing selected, Alt+A inside an existing annotation opens its thread with the cursor in the reply box.
+- **Annotate selection** — select some code and press Alt+A: a one-line input opens at the top of the window, focused. It stays open when you click away, so you can read the code while writing; Enter saves, Escape cancels. Or click the "+" in the margin and write in the comment box; save with Cmd+Enter. The annotation covers whole lines, and those lines are saved with it as its snippet. After saving, the thread collapses to its margin icon.
+- **Add to a thread** — with nothing selected, Alt+A inside an existing annotation opens the same input, and saving adds to that thread.
 - **Annotate file** — from the editor title bar or the explorer's right-click menu. The note belongs to the whole file and shows at its top.
 - A question and its later answer sit together in one thread.
 - Any annotation can be edited or deleted. No history is kept.
@@ -64,7 +64,8 @@ A tour is written by a coding agent to `.slick/tour.json`: a title and an ordere
 
 - Built on VS Code's Comments API (`vscode.comments.createCommentController`). This provides the inline comment boxes, the threads and the Comments panel.
 - Whole-file annotations: the stable API (`@types/vscode` 1.138) supports threads with no range. Setting `thread.range = undefined` attaches the thread to the file. `createCommentThread` still requires a range when it is called, so create the thread first, then clear its range.
-- Focusing the reply box uses the proposed `commentReveal` API (`thread.reveal(undefined, { focus: Reply })`). It must be allowed per extension: `--enable-proposed-api=saiashirwad.slick-annotate` for the dev host, or `"enable-proposed-api": ["saiashirwad.slick-annotate"]` in `~/.vscode/argv.json` for normal use.
+- Alt+A and Annotate File write through `vscode.window.showInputBox` (with `ignoreFocusOut`), not a thread's comment box. The thread is created only once the input is saved.
+  - Before, they opened the thread's own comment box and put the cursor in its reply field with the proposed `commentReveal` API (`thread.reveal(undefined, { focus: Reply })`). That kept the note next to the code and allowed several lines, but proposed APIs can't be published to the Marketplace, and the stable API can show a thread without focusing its reply box. The input box is the trade: publishable, instant and less distracting, but one line only and at the top of the window. If `commentReveal` is finalized, or the one-line limit starts to hurt, going back is an option.
 - Installed in place with **Developer: Install Extension from Location…** pointing at the repo, so a window reload picks up code changes.
 - No build step: `main` points at `src/extension.ts` and VS Code's bundled Node (24.x) strips types at load. TypeScript 7 is used only to type-check (`tsc --noEmit`, with `erasableSyntaxOnly` and `.ts` import extensions). The one runtime dependency is mermaid, loaded from `node_modules` into the tour document only when a step has a diagram.
 - The tour document is a webview view (`registerWebviewViewProvider`), kept alive while hidden. Step bodies are rendered by VS Code's own Markdown engine (`markdown.api.render`), which with the built-in mermaid extension turns diagram fences into `.mermaid` elements. Its stylesheet and script live in `media/` and use only theme colours.

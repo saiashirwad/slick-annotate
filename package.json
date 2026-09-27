@@ -9,9 +9,6 @@
     "vscode": "^1.138.0"
   },
   "main": "./src/extension.ts",
-  "enabledApiProposals": [
-    "commentReveal"
-  ],
   "activationEvents": [
     "onStartupFinished"
   ],

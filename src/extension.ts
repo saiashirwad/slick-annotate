@@ -1,14 +1,12 @@
 import * as vscode from 'vscode'
 import { randomUUID } from 'node:crypto'
+import { basename } from 'node:path'
 import { format } from './copy.ts'
 import { load, save, type Annotation, type Range } from './session.ts'
 import { activateTour } from './tour.ts'
 
 // The comment shown for each annotation. VS Code passes these same objects back to comment commands.
 const annotationOf = new WeakMap<vscode.Comment, Annotation>()
-
-// Focusing the reply box needs the proposed `commentReveal` API (see vscode.proposed.d.ts).
-const focusReply = { focus: vscode.CommentThreadFocus.Reply }
 
 export function activate(context: vscode.ExtensionContext) {
   const folder = vscode.workspace.workspaceFolders?.[0]
@@ -65,11 +63,33 @@ export function activate(context: vscode.ExtensionContext) {
 
     const document = vscode.workspace.textDocuments.find((d) => d.uri.toString() === thread.uri.toString())
 
-    if (!document || !thread.range) return
+    if (!document) return
     thread.range = wholeLines(document, thread.range)
     threads.add(thread)
 
     return document.getText(thread.range)
+  }
+
+  function annotate(thread: vscode.CommentThread, text: string) {
+    const previous = thread.comments[0] && annotationOf.get(thread.comments[0])
+    const snippet = previous?.snippet ?? begin(thread)
+
+    if (snippet === undefined || !text.trim()) return
+
+    const annotation: Annotation = {
+      id: randomUUID(),
+      threadId: previous?.threadId ?? randomUUID(),
+      file: vscode.workspace.asRelativePath(thread.uri, false),
+      range: thread.range && fromRange(thread.range),
+      snippet,
+      body: text,
+      createdAt: new Date().toISOString(),
+    }
+
+    session.annotations.push(annotation)
+    persist()
+    thread.comments = [...thread.comments, toComment(annotation)]
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
   }
 
   const threadOf = (comment: vscode.Comment) => [...threads].find((t) => t.comments.includes(comment))
@@ -103,30 +123,15 @@ export function activate(context: vscode.ExtensionContext) {
           )
         : undefined
 
-      const thread = existing ?? controller.createCommentThread(document.uri, wholeLines(document, selection), [])
-      await thread.reveal(undefined, focusReply)
+      const range = existing?.range ?? wholeLines(document, selection)
+      const text = await ask(`${existing ? 'Add to the annotation on' : 'Annotate'} ${linesOf(range)}`)
+
+      if (text) annotate(existing ?? createThread(document.uri, range, []), text)
     }),
 
+    // Replies typed into a thread's own comment box, including threads started from the gutter "+".
     vscode.commands.registerCommand('slick.annotate', ({ thread, text }: vscode.CommentReply) => {
-      const previous = thread.comments[0] && annotationOf.get(thread.comments[0])
-      const snippet = previous?.snippet ?? begin(thread)
-
-      if (snippet === undefined || !text.trim()) return
-
-      const annotation: Annotation = {
-        id: randomUUID(),
-        threadId: previous?.threadId ?? randomUUID(),
-        file: vscode.workspace.asRelativePath(thread.uri, false),
-        range: thread.range && fromRange(thread.range),
-        snippet,
-        body: text,
-        createdAt: new Date().toISOString(),
-      }
-
-      session.annotations.push(annotation)
-      persist()
-      thread.comments = [...thread.comments, toComment(annotation)]
-      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed
+      annotate(thread, text)
       // Collapsing hides the comment box but leaves focus in it; hand focus back to the code.
       vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
     }),
@@ -137,8 +142,9 @@ export function activate(context: vscode.ExtensionContext) {
       if (!uri) return
       await vscode.window.showTextDocument(uri)
       const existing = [...threads].find((t) => !t.range && t.uri.toString() === uri.toString())
-      const thread = existing ?? createThread(uri, undefined, [])
-      await thread.reveal(undefined, focusReply)
+      const text = await ask(`${existing ? 'Add to the annotation on' : 'Annotate'} ${basename(uri.path)}`)
+
+      if (text) annotate(existing ?? createThread(uri, undefined, []), text)
     }),
 
     vscode.commands.registerCommand('slick.copySession', async () => {
@@ -205,6 +211,16 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {}
+
+// A one-line input at the top of the window, focused as it opens. It stays open when focus moves away,
+// so the code can be read while writing; Escape dismisses it and returns undefined.
+function ask(title: string) {
+  return vscode.window.showInputBox({ title, placeHolder: 'Annotate…', ignoreFocusOut: true })
+}
+
+function linesOf({ start, end }: vscode.Range) {
+  return start.line === end.line ? `line ${start.line + 1}` : `lines ${start.line + 1}–${end.line + 1}`
+}
 
 function toComment(annotation: Annotation, mode = vscode.CommentMode.Preview) {
   const comment: vscode.Comment = {
