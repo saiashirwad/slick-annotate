@@ -176,10 +176,12 @@ function page(webview: vscode.Webview, mermaid: vscode.Uri, tour: Tour | undefin
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource};">
 <style>
   html, body { margin: 0; }
-  body { padding: 8px 12px 40vh; font: 14px/1.65 var(--vscode-font-family); color: var(--vscode-foreground); }
-  section { margin: 0 -8px 10px; padding: 10px 12px 12px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+  body { padding: 8px 12px 40vh; font: 14px/1.75 var(--vscode-font-family); color: var(--vscode-foreground); }
+  /* A comfortable line length however wide the sidebar gets. */
+  .body { max-width: 68ch; }
+  section { margin: 0 -8px 10px; padding: 12px 14px 14px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
   section:hover { background: var(--vscode-list-hoverBackground); }
-  section.current { border-color: color-mix(in srgb, var(--vscode-focusBorder) 70%, transparent); background: color-mix(in srgb, var(--vscode-focusBorder) 6%, var(--vscode-editorWidget-background)); cursor: default; }
+  section.current { border-color: color-mix(in srgb, var(--vscode-focusBorder) 70%, transparent); background: none; cursor: default; }
   /* Only the current step is open. Collapsed by height, not display, so mermaid can still measure hidden diagrams. */
   section:not(.current) { padding-bottom: 8px; }
   section:not(.current) h2 { margin-bottom: 0; }
@@ -192,9 +194,10 @@ function page(webview: vscode.Webview, mermaid: vscode.Uri, tour: Tour | undefin
   blockquote { margin: 0 0 8px; padding: 6px 12px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--vscode-textLink-foreground) 30%, transparent); background: color-mix(in srgb, var(--vscode-textLink-foreground) 8%, transparent); }
   blockquote > :last-child { margin-bottom: 0; }
   .source { font-family: var(--vscode-editor-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  h2 { margin: 2px 0 6px; font-size: 15px; font-weight: 600; }
+  h2 { margin: 4px 0 8px; font-size: 15px; font-weight: 600; line-height: 1.4; }
   h3, h4 { margin: 10px 0 4px; font-size: 14px; font-weight: 600; }
-  p, ul, ol, table { margin: 0 0 8px; }
+  p, ul, ol, table { margin: 0 0 12px; }
+  li + li { margin-top: 4px; }
   ul, ol { padding-left: 20px; }
   code { font: 0.88em var(--vscode-editor-font-family); padding: 1px 5px; border-radius: 4px; color: var(--vscode-textPreformat-foreground); background: var(--vscode-textPreformat-background, color-mix(in srgb, var(--vscode-textPreformat-foreground) 12%, transparent)); }
   pre { margin: 0 0 8px; padding: 8px 12px; border-radius: 4px; overflow-x: auto; background: var(--vscode-textCodeBlock-background); }
