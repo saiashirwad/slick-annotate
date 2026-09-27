@@ -165,7 +165,7 @@ function page(webview: vscode.Webview, mermaid: vscode.Uri, tour: Tour | undefin
 
   const steps = tour?.steps
     .map((step, i) => `<section data-i="${i}">
-  <div class="meta"><span>Step ${i + 1}</span>${step.file ? `<span class="source">${escape(step.file)}</span>` : ''}</div>
+  <div class="meta"><span class="step">${i + 1}</span>${step.file ? `<span class="source">${escape(step.file)}</span>` : ''}</div>
   <h2>${escape(step.title)}</h2>
   <div class="body">${sections[i] ?? ''}</div>
 </section>`)
@@ -179,23 +179,30 @@ function page(webview: vscode.Webview, mermaid: vscode.Uri, tour: Tour | undefin
   body { padding: 8px 12px 40vh; font: 14px/1.65 var(--vscode-font-family); color: var(--vscode-foreground); }
   section { margin: 0 -8px 10px; padding: 10px 12px 12px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
   section:hover { background: var(--vscode-list-hoverBackground); }
-  section.current { border-color: var(--vscode-focusBorder); background: var(--vscode-editorWidget-background); cursor: default; }
+  section.current { border-color: color-mix(in srgb, var(--vscode-focusBorder) 70%, transparent); background: color-mix(in srgb, var(--vscode-focusBorder) 6%, var(--vscode-editorWidget-background)); cursor: default; }
   /* Only the current step is open. Collapsed by height, not display, so mermaid can still measure hidden diagrams. */
   section:not(.current) { padding-bottom: 8px; }
   section:not(.current) h2 { margin-bottom: 0; }
   section:not(.current) .body { height: 0; overflow: hidden; }
   .body > :last-child { margin-bottom: 0; }
-  .meta { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .meta { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .step { min-width: 18px; padding: 0 6px; border-radius: 9px; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; color: var(--vscode-descriptionForeground); background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent); }
+  section.current .step { color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
+  strong { font-weight: 600; color: var(--vscode-editor-foreground); }
+  blockquote { margin: 0 0 8px; padding: 6px 12px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--vscode-textLink-foreground) 30%, transparent); background: color-mix(in srgb, var(--vscode-textLink-foreground) 8%, transparent); }
+  blockquote > :last-child { margin-bottom: 0; }
   .source { font-family: var(--vscode-editor-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   h2 { margin: 2px 0 6px; font-size: 15px; font-weight: 600; }
   h3, h4 { margin: 10px 0 4px; font-size: 14px; font-weight: 600; }
   p, ul, ol, table { margin: 0 0 8px; }
   ul, ol { padding-left: 20px; }
-  code { font: 0.9em var(--vscode-editor-font-family); padding: 1px 4px; border-radius: 3px; background: var(--vscode-textCodeBlock-background); }
+  code { font: 0.88em var(--vscode-editor-font-family); padding: 1px 5px; border-radius: 4px; color: var(--vscode-textPreformat-foreground); background: var(--vscode-textPreformat-background, color-mix(in srgb, var(--vscode-textPreformat-foreground) 12%, transparent)); }
   pre { margin: 0 0 8px; padding: 8px 12px; border-radius: 4px; overflow-x: auto; background: var(--vscode-textCodeBlock-background); }
-  pre code { padding: 0; background: none; }
+  pre code { padding: 0; color: inherit; background: none; }
   table { border-collapse: collapse; font-size: 13px; }
-  th, td { padding: 3px 10px; border: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35)); text-align: left; }
+  th, td { padding: 4px 10px; border: 1px solid color-mix(in srgb, var(--vscode-foreground) 15%, transparent); text-align: left; }
+  th { font-weight: 600; background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent); }
+  tr:nth-child(even) td { background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
   a { color: var(--vscode-textLink-foreground); }
   .mermaid { margin: 4px 0 8px; } .mermaid svg { max-width: 100%; height: auto; }
   .hljs-keyword, .hljs-built_in { color: var(--vscode-symbolIcon-keywordForeground); }
