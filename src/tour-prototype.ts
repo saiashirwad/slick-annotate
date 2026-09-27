@@ -10,36 +10,20 @@ type Tour = { title: string; steps: Step[] }
 
 export function activateTour(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder) {
   const path = join(folder.uri.fsPath, '.slick', 'tour.json')
+  const mermaid = vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'mermaid', 'dist')
   let tour: Tour | undefined
   let current = context.workspaceState.get('slick.tourIndex', 0)
   let active = !context.workspaceState.get('slick.tourEnded', false)
   let place: { uri: vscode.Uri; range: vscode.Range } | undefined
-  // The current step's text, in a small web panel inserted between lines of code (proposed `editorInsets`).
-  let card: vscode.WebviewEditorInset | undefined
   let revision = 0
-  const changed = new vscode.EventEmitter<void>()
+  // The whole tour as one document in the sidebar, each step's Markdown rendered by VS Code's own engine.
+  let view: vscode.WebviewView | undefined
+  let sections: string[] = []
+  let error: string | undefined
 
   const decoration = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
-  })
-
-  const view = vscode.window.createTreeView<Step>('slick.tour', {
-    treeDataProvider: {
-      onDidChangeTreeData: changed.event,
-      getChildren: () => tour?.steps ?? [],
-      getTreeItem: (step) => {
-        const index = tour!.steps.indexOf(step)
-        const item = new vscode.TreeItem(step.title)
-        item.id = String(index)
-        item.description = active && index === current ? 'Current' : undefined
-        item.iconPath = new vscode.ThemeIcon(active && index === current ? 'debug-stackframe' : 'circle-outline')
-        item.tooltip = new vscode.MarkdownString(step.body)
-        item.command = { command: 'slick.tourStep', title: 'Go to Step', arguments: [index] }
-
-        return item
-      },
-    },
   })
 
   function decorate() {
@@ -48,83 +32,30 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
     }
   }
 
-  function clear() {
+  function draw() {
+    if (!view) return
+    view.title = tour?.title ?? 'Tour'
+    view.webview.html = page(view.webview, mermaid, tour, sections, error)
+  }
+
+  // Tells the document which step is current; `scroll` brings it into view (not when you clicked it yourself).
+  function mark(scroll: boolean) {
+    void view?.webview.postMessage({ current: active ? current : -1, scroll })
+
+    if (view) view.description = tour && active ? `${current + 1} of ${tour.steps.length}` : undefined
+  }
+
+  async function show(navigate: boolean, scroll = true) {
+    const version = ++revision
     place = undefined
     decorate()
-  }
-
-  // Every step's card, rendered by VS Code's own Markdown engine as soon as the tour loads, so moving is instant.
-  let pages: Promise<(webview: vscode.Webview) => string>[] = []
-  // Heights the cards measured themselves at, by step, so a revisited card opens at exactly the right size.
-  let heights: number[] = []
-
-  function render(step: Step, index: number) {
-    const meta = `Step ${index + 1} of ${tour!.steps.length}`
-
-    return Promise.resolve(vscode.commands.executeCommand<string>('markdown.api.render', `# ${step.title}\n\n${step.body}`))
-      .then((body) => (webview: vscode.Webview) => page(meta, body, webview, context.extensionUri))
-  }
-
-  // Opens at an estimated height; the webview measures itself and the panel is rebuilt only if the text overflows.
-  function showCard(editor: vscode.TextEditor, line: number, html: (webview: vscode.Webview) => string, step: Step) {
-    card?.dispose()
-    const index = current
-
-    const open = (height: number) => {
-      const inset = vscode.window.createWebviewTextEditorInset(editor, line, height, {
-        enableScripts: true,
-        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'node_modules', 'mermaid', 'dist')],
-      })
-
-      inset.webview.html = html(inset.webview)
-
-      inset.webview.onDidReceiveMessage((pixels: number) => {
-        const fitted = Math.ceil(pixels / lineHeight())
-        heights[index] = Math.max(fitted, 1)
-
-        if (inset !== card || fitted <= height) return
-        inset.dispose()
-        card = open(fitted)
-      })
-
-      return inset
-    }
-
-    card = open(heights[index] ?? estimate(step))
-  }
-
-  function update() {
-    const running = active && !!tour?.steps.length
-    void vscode.commands.executeCommand('setContext', 'slick.tourActive', running)
-    view.title = tour?.title ?? 'Tour Prototype'
-    view.message = !tour ? 'Copy a tour to .slick/tour.json to begin.' : !active ? 'Tour ended. Click a step to resume.' : undefined
-    changed.fire()
-  }
-
-  async function show(navigate: boolean) {
-    const version = ++revision
-
-    if (navigate || !active) {
-      card?.dispose()
-      card = undefined
-    }
-
-    clear()
-    update()
+    void vscode.commands.executeCommand('setContext', 'slick.tourActive', active && !!tour?.steps.length)
+    mark(scroll)
     const step = active ? tour?.steps[current] : undefined
 
-    if (!step) return
+    if (!step?.file) return
 
     try {
-      if (!step.file) {
-        const editor = vscode.window.activeTextEditor
-
-        if (navigate && editor) showCard(editor, 0, await pages[current], step)
-
-        return
-      }
-
-      const html = navigate ? await pages[current] : undefined
       const uri = vscode.Uri.joinPath(folder.uri, step.file)
       const document = await vscode.workspace.openTextDocument(uri)
 
@@ -143,62 +74,71 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
 
       decorate()
 
-      if (!html) return
-      const editor = await vscode.window.showTextDocument(document)
+      if (!navigate) return
+      const editor = await vscode.window.showTextDocument(document, { preserveFocus: true })
 
-      if (version !== revision) return
-      // Reserve the card's space in the same tick the file opens, so the code never jumps. Insets count lines from 1.
-      showCard(editor, place ? place.range.end.line + 1 : 0, html, step)
-
-      if (place) {
-        editor.selection = new vscode.Selection(place.range.start, place.range.start)
-        editor.revealRange(place.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
-        decorate()
-      }
-    } catch (error) {
-      if (version === revision) view.message = `Cannot open this step: ${String(error)}`
+      if (version !== revision || !place) return
+      editor.selection = new vscode.Selection(place.range.start, place.range.start)
+      editor.revealRange(place.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+    } catch (e) {
+      if (version === revision) void vscode.window.showWarningMessage(`Cannot open this step: ${String(e)}`)
     }
   }
 
-  function go(index: number) {
+  function go(index: number, scroll = true) {
     if (!tour?.steps.length) return
     current = Math.max(0, Math.min(index, tour.steps.length - 1))
     active = true
     void context.workspaceState.update('slick.tourIndex', current)
     void context.workspaceState.update('slick.tourEnded', false)
-    void show(true)
+    void show(true, scroll)
   }
 
-  function reload() {
+  async function reload() {
     try {
       tour = undefined
+      sections = []
+      error = undefined
 
       if (existsSync(path)) {
-        // Like session.json, this hand-authored prototype input assumes the documented shape.
-        tour = JSON.parse(readFileSync(path, 'utf8'))
-        current = Math.max(0, Math.min(current, tour!.steps.length - 1))
-        pages = tour!.steps.map(render)
-        heights = []
+        // SAFETY: hand-authored prototype input, assumed to have the documented shape (like session.json).
+        tour = JSON.parse(readFileSync(path, 'utf8')) as Tour
+        current = Math.max(0, Math.min(current, tour.steps.length - 1))
         void context.workspaceState.update('slick.tourIndex', current)
-      }
 
-      void show(false)
-    } catch (error) {
+        sections = await Promise.all(
+          tour.steps.map((step) => vscode.commands.executeCommand<string>('markdown.api.render', step.body)),
+        )
+      }
+    } catch (e) {
       tour = undefined
-      ++revision
-      clear()
-      update()
-      view.message = `Invalid .slick/tour.json: ${String(error)}`
+      error = `Invalid .slick/tour.json: ${String(e)}`
     }
+
+    draw()
+    void show(false)
   }
 
   const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, '.slick/tour.json'))
   context.subscriptions.push(
-    decoration, view, changed, watcher,
+    decoration, watcher,
+    vscode.window.registerWebviewViewProvider('slick.tour', {
+      resolveWebviewView: (resolved) => {
+        view = resolved
+        view.webview.options = { enableScripts: true, localResourceRoots: [mermaid] }
+        view.webview.onDidReceiveMessage((message: { go?: number; ready?: boolean }) => {
+          if (message.go !== undefined) go(message.go, false)
+
+          if (message.ready) mark(true)
+        })
+        view.onDidDispose(() => (view = undefined))
+        draw()
+      },
+    }, { webviewOptions: { retainContextWhenHidden: true } }),
     watcher.onDidCreate(reload), watcher.onDidChange(reload), watcher.onDidDelete(reload),
     vscode.window.onDidChangeVisibleTextEditors(decorate),
     vscode.workspace.onDidChangeTextDocument(({ document }) => {
-      if (place?.uri.toString() === document.uri.toString()) void show(false)
+      if (place?.uri.toString() === document.uri.toString()) void show(false, false)
     }),
     vscode.commands.registerCommand('slick.tourStep', go),
     vscode.commands.registerCommand('slick.tourNext', () => go(current + 1)),
@@ -209,55 +149,42 @@ export function activateTour(context: vscode.ExtensionContext, folder: vscode.Wo
       void context.workspaceState.update('slick.tourEnded', true)
       void show(false)
     }),
-    { dispose: () => { ++revision; card?.dispose() } },
+    { dispose: () => { ++revision } },
   )
-  reload()
+  void reload()
 }
 
-// Card height in editor lines, from the same metrics as the CSS below: roughly 80 characters per text line.
-function estimate(step: Step) {
-  // A diagram is guessed at 280px; everything else by paragraph length at roughly 90 characters per line.
-  const diagrams = step.body.match(/```mermaid[\s\S]*?```/g) ?? []
-  const text = step.body.replace(/```mermaid[\s\S]*?```/g, '')
-  const paragraphs = text.split(/\n\s*\n/)
-  const lines = paragraphs.reduce((sum, paragraph) => sum + paragraph.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 90)), 0), 0)
-  const pixels = 12 + 20 + 30 + lines * 22.4 + 8 * paragraphs.length + 22 + diagrams.length * 280
+const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
 
-  // One spare line, so an estimate that falls a little short doesn't force a rebuild.
-  return Math.ceil(pixels / lineHeight()) + 1
-}
-
-// Pixels per editor line, following VS Code's rules for `editor.lineHeight`.
-function lineHeight() {
-  const config = vscode.workspace.getConfiguration('editor')
-  const fontSize = config.get<number>('fontSize', 14)
-  const height = config.get<number>('lineHeight', 0)
-
-  if (height <= 0) return Math.round(fontSize * 1.5)
-
-  return height < 8 ? fontSize * height : height
-}
-
-// Mermaid is only loaded into cards that have a diagram; the card reports its height once diagrams have drawn.
-function page(meta: string, body: string, webview: vscode.Webview, root: vscode.Uri) {
+// Mermaid is loaded only when some step has a diagram. VS Code's built-in mermaid extension turns fences into
+// `.mermaid` elements; without it they stay code blocks, which the script converts.
+function page(webview: vscode.Webview, mermaid: vscode.Uri, tour: Tour | undefined, sections: string[], error: string | undefined) {
   const nonce = randomUUID().replaceAll('-', '')
-  // VS Code's built-in mermaid extension turns fences into `.mermaid` elements; without it they stay code blocks.
-  const diagrams = /class="mermaid"|language-mermaid/.test(body)
-  const mermaid = webview.asWebviewUri(vscode.Uri.joinPath(root, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js'))
+  const diagrams = sections.some((html) => /class="mermaid"|language-mermaid/.test(html))
+  const empty = error ?? 'Copy a tour to .slick/tour.json to begin.'
+
+  const steps = tour?.steps
+    .map((step, i) => `<section data-i="${i}">
+  <div class="meta"><span>Step ${i + 1}</span>${step.file ? `<span class="source">${escape(step.file)}</span>` : ''}</div>
+  <h2>${escape(step.title)}</h2>
+  ${sections[i] ?? ''}
+</section>`)
+    .join('\n')
 
   return `<!doctype html>
 <html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource};">
 <style>
-  html, body { margin: 0; background: transparent; }
-  body { padding: 4px 0 8px; font: 14px/1.6 var(--vscode-font-family); color: var(--vscode-editor-foreground); }
-  .card { max-width: 80ch; padding: 10px 16px 12px; border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, rgba(128, 128, 128, 0.35))); border-radius: 6px; background: var(--vscode-editorWidget-background); }
-  .card { animation: in 180ms ease-out both; }
-  @keyframes in { from { opacity: 0; } }
-  .meta { font-size: 12px; opacity: 0.6; }
-  h1 { margin: 2px 0 6px; font-size: 16px; font-weight: 600; }
-  h2, h3, h4 { margin: 10px 0 4px; font-size: 14px; font-weight: 600; }
-  p, ul, ol, table { margin: 0 0 8px; } .card > :last-child { margin-bottom: 0; }
+  html, body { margin: 0; }
+  body { padding: 8px 12px 40vh; font: 14px/1.65 var(--vscode-font-family); color: var(--vscode-foreground); }
+  section { margin: 0 -8px 10px; padding: 10px 12px 12px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+  section:hover { background: var(--vscode-list-hoverBackground); }
+  section.current { border-color: var(--vscode-focusBorder); background: var(--vscode-editorWidget-background); cursor: default; }
+  .meta { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .source { font-family: var(--vscode-editor-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  h2 { margin: 2px 0 6px; font-size: 15px; font-weight: 600; }
+  h3, h4 { margin: 10px 0 4px; font-size: 14px; font-weight: 600; }
+  p, ul, ol, table { margin: 0 0 8px; } section > :last-child { margin-bottom: 0; }
   ul, ol { padding-left: 20px; }
   code { font: 0.9em var(--vscode-editor-font-family); padding: 1px 4px; border-radius: 3px; background: var(--vscode-textCodeBlock-background); }
   pre { margin: 0 0 8px; padding: 8px 12px; border-radius: 4px; overflow-x: auto; background: var(--vscode-textCodeBlock-background); }
@@ -272,11 +199,29 @@ function page(meta: string, body: string, webview: vscode.Webview, root: vscode.
   .hljs-comment { color: var(--vscode-descriptionForeground); font-style: italic; }
   .hljs-title, .hljs-function { color: var(--vscode-symbolIcon-functionForeground); }
   .hljs-type, .hljs-class { color: var(--vscode-symbolIcon-classForeground); }
+  .empty { color: var(--vscode-descriptionForeground); }
 </style></head>
-<body><div class="card"><div class="meta">${meta.replace(/[&<]/g, (c) => (c === '&' ? '&amp;' : '&lt;'))}</div>${body}</div>
-${diagrams ? `<script nonce="${nonce}" src="${mermaid}"></script>` : ''}
+<body>${steps ?? `<p class="empty">${escape(empty)}</p>`}
+${diagrams ? `<script nonce="${nonce}" src="${webview.asWebviewUri(vscode.Uri.joinPath(mermaid, 'mermaid.min.js'))}"></script>` : ''}
 <script nonce="${nonce}">
-  const report = () => acquireVsCodeApi().postMessage(document.body.getBoundingClientRect().height)
+  const vscode = acquireVsCodeApi()
+
+  document.addEventListener('click', (event) => {
+    const section = event.target.closest('section')
+
+    if (!section || event.target.closest('a') || String(getSelection())) return
+    vscode.postMessage({ go: Number(section.dataset.i) })
+  })
+
+  window.addEventListener('message', ({ data }) => {
+    for (const section of document.querySelectorAll('section')) {
+      const current = Number(section.dataset.i) === data.current
+      section.classList.toggle('current', current)
+
+      if (current && data.scroll) section.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    }
+  })
+
   for (const code of document.querySelectorAll('code.language-mermaid')) {
     const diagram = document.createElement('div')
     diagram.className = 'mermaid'
@@ -284,11 +229,12 @@ ${diagrams ? `<script nonce="${nonce}" src="${mermaid}"></script>` : ''}
     code.closest('pre').replaceWith(diagram)
   }
 
-  if (!document.querySelector('.mermaid') || typeof mermaid === 'undefined') report()
-  else {
+  if (typeof mermaid !== 'undefined') {
     mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: document.body.classList.contains('vscode-light') ? 'neutral' : 'dark' })
-    mermaid.run().catch(() => {}).finally(report)
+    mermaid.run().catch(() => {})
   }
+
+  vscode.postMessage({ ready: true })
 </script>
 </body></html>`
 }

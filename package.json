@@ -10,8 +10,7 @@
   },
   "main": "./src/extension.ts",
   "enabledApiProposals": [
-    "commentReveal",
-    "editorInsets"
+    "commentReveal"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -29,8 +28,9 @@
     "views": {
       "slick-tour": [
         {
+          "type": "webview",
           "id": "slick.tour",
-          "name": "Tour Prototype"
+          "name": "Tour"
         }
       ]
     },
