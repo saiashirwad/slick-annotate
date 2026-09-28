@@ -1,6 +1,6 @@
 import { afterEach, mock, spyOn, test, expect } from 'bun:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { join, win32 } from 'node:path'
 import * as fs from 'node:fs/promises'
 import * as v from 'valibot'
@@ -127,28 +127,38 @@ test('streamed working-tree comparisons preserve the base encoding BOM', async (
   expect(scopeComparison(result)).toMatchObject({ added: 1, removed: 1 })
 })
 
-test('3: unstaged renames, including edited files and subdirectory workspaces, retain the base endpoint', async () => {
+test('new paths are independent additions and absent paths are deletions', async () => {
   const { root, git, put, commit } = fixture()
-  mkdirSync(join(root, 'sub'))
-  const original = 'old anchor\none\ntwo\nthree\nfour\nfive\nsix\n'
-  put('sub/old name.ts', original)
   commit()
-  renameSync(join(root, 'sub/old name.ts'), join(root, 'sub/new name.ts'))
-  for (const changed of [false, true]) {
-    if (changed) put('sub/new name.ts', original.replace('old anchor', 'new anchor'))
-    const index = readFileSync(join(root, '.git/index'))
-    const status = git('status', '--porcelain')
-    const result = (await prepareComparison(join(root, 'sub'), { base: 'HEAD' }, ['new name.ts'])).get(
-      'new name.ts',
-    )!.file!
-    expect(result.before.endpoint).toMatchObject({ file: 'sub/old name.ts' })
-    expect(result.before.text).toBe(original)
-    expect(
-      scopeComparison(result, locate(original, 'old anchor'), locate(result.after.text, 'old anchor')),
-    ).toMatchObject({ added: changed ? 1 : 0, removed: changed ? 1 : 0 })
-    expect(readFileSync(join(root, '.git/index'))).toEqual(index)
-    expect(git('status', '--porcelain')).toBe(status)
+  const base = git('rev-parse', 'HEAD')
+  rmSync(join(root, 'service.ts'))
+  for (const file of ['one.ts', 'two.ts']) put(file, 'service anchor\nstable\n')
+  for (const head of [undefined, 'HEAD']) {
+    if (head) commit()
+    const files = await prepareComparison(root, { base, head }, ['one.ts', 'two.ts', 'service.ts'])
+    for (const file of ['one.ts', 'two.ts']) {
+      const added = files.get(file)!.file!
+      expect(added.before.exists).toBe(false)
+      expect(scopeComparison(added)).toMatchObject({ added: 2, removed: 0 })
+    }
+    const deleted = files.get('service.ts')!.file!
+    expect(deleted.after.exists).toBe(false)
+    expect(scopeComparison(deleted)).toMatchObject({ added: 0, removed: 2 })
   }
+})
+
+test('Node catches an early Git exit while streaming a large base without an unhandled EPIPE', () => {
+  const { root, commit } = fixture()
+  commit()
+  const script = `
+    import assert from 'node:assert/strict';
+    import { git } from ${JSON.stringify(new URL('../src/git.ts', import.meta.url).href)};
+    const root = ${JSON.stringify(root)};
+    await assert.rejects(git(root, ['diff', '--no-index', '--', '-', 'missing.ts'], Buffer.alloc(8 * 1024 * 1024, 97)));
+    await git(root, ['rev-parse', '--verify', 'HEAD']);
+    console.log('survived');
+  `
+  expect(execFileSync('node', ['--input-type=module', '-e', script], { encoding: 'utf8' }).trim()).toBe('survived')
 })
 
 test('4: readable disk and explicit-head navigation survive an unreadable binary base', async () => {

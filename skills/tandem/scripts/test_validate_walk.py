@@ -75,21 +75,6 @@ class ComparisonTests(unittest.TestCase):
             self.assertEqual(len(errors), 1)
             self.assertIn("place 1", errors[0])
 
-    def test_unstaged_edited_rename_accepts_old_quote(self):
-        original = "old anchor\none\ntwo\nthree\nfour\nfive\nsix\n"
-        self.put("old.ts", original)
-        self.commit()
-        (self.root / "old.ts").rename(self.root / "new.ts")
-        for changed in (False, True):
-            if changed:
-                self.put("new.ts", original.replace("old anchor", "new anchor"))
-            index = (self.root / ".git/index").read_bytes()
-            status = self.git("status", "--porcelain")
-            walk = self.walk([{"file": "new.ts", "quote": "old anchor"}], {"base": "HEAD"})
-            self.assertEqual(validate(walk, self.root), [])
-            self.assertEqual((self.root / ".git/index").read_bytes(), index)
-            self.assertEqual(self.git("status", "--porcelain"), status)
-
     def test_plain_symlink_and_comparison_policy(self):
         (self.root / "link.ts").symlink_to("service.ts")
         self.commit()
@@ -119,7 +104,7 @@ class ComparisonTests(unittest.TestCase):
             self.assertEqual(versions("thing.ts"), ("old lower\n", "new lower\n"))
         self.assertEqual(self.git("status", "--porcelain"), "")
 
-    def test_existing_and_empty_places_do_not_scan_for_renames(self):
+    def test_tree_reads_are_path_scoped_and_empty_places_skip_git(self):
         self.commit()
         with patch("validate_walk.git", wraps=git) as calls:
             self.assertEqual(validate(self.walk([{"file": "service.ts"}], {"base": "HEAD"}), self.root), [])

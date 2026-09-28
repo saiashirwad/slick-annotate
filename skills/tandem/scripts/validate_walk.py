@@ -114,15 +114,15 @@ def quote_count(text, quote):
     return count
 
 
-def git(root, *args, input=None):
+def git(root, *args):
     try:
         result = subprocess.run(
-            ["git", *args], cwd=root, capture_output=True, timeout=30, input=input,
+            ["git", *args], cwd=root, capture_output=True, timeout=30,
             env={**os.environ, "LC_ALL": "C", "GIT_OPTIONAL_LOCKS": "0", "GIT_LITERAL_PATHSPECS": "1"},
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise ValueError(f"Git unavailable: {error}") from error
-    if result.returncode and not ("--no-index" in args and result.returncode == 1):
+    if result.returncode:
         raise ValueError(f"Git {args[0]} failed: {result.stderr.decode(errors='replace').strip()}")
     return result.stdout
 
@@ -138,10 +138,10 @@ def comparison_sources(root, compare, files):
     base = bases[0]
     explicit = "head" in compare
     selected = {(root / file).relative_to(repo).as_posix() for file in files}
-    def tree(commit, paths=()):
-        entries = git(repo, "ls-tree", "-rz", "--full-tree", commit, "--", *paths).decode().split("\0")
+    def tree(commit):
+        entries = git(repo, "ls-tree", "-rz", "--full-tree", commit, "--", *selected).decode().split("\0")
         return {entry.split("\t", 1)[1]: entry.split(" ", 1)[0] for entry in entries if entry}
-    before, after = tree(base, selected), tree(head, selected) if explicit else None
+    before, after = tree(base), tree(head) if explicit else None
     reads = {}
     def cached(key, read):
         if key not in reads:
@@ -181,62 +181,13 @@ def comparison_sources(root, compare, files):
             return text
         return cached((None, file), read)
 
-    destinations = []
-    for file in selected - before.keys():
-        try:
-            if (committed(head, file) if explicit else working(file)) is not None:
-                destinations.append(file)
-        except (OSError, ValueError):
-            pass
-    sources = []
-    if destinations:
-        before.update(tree(base))
-        head_tree = tree(head) if explicit else None
-        for file in before:
-            if explicit:
-                if file not in head_tree:
-                    sources.append(file)
-            else:
-                try:
-                    (repo / file).lstat()
-                except FileNotFoundError:
-                    sources.append(file)
-                except OSError:
-                    pass
-
-    def rename_source(file, right):
-        best, old, ambiguous = 0.5, file, False
-        lines = lambda text: len(text.split("\n")) - int(text.endswith("\n")) if text else 0
-        for source in sources:
-            try:
-                left = committed(base, source)
-            except (OSError, ValueError):
-                continue
-            if left == right:
-                score = 1
-            else:
-                options = ["--numstat", "--text", "--no-color", "--no-ext-diff", "--no-textconv"]
-                output = git(repo, "diff", *options, f"{base}:{source}", f"{head}:{file}", "--") if explicit else git(repo, "diff", "--no-index", *options, "--", "-", str(repo / file), input=git(repo, "show", f"{base}:{source}"))
-                removed = int(output.split(b"\t", 2)[1])
-                score = (lines(left) - removed) / max(lines(left), lines(right), 1)
-            if score < best:
-                continue
-            if score == best and old != file:
-                ambiguous = True
-                continue
-            best, old, ambiguous = score, source, False
-        if ambiguous:
-            raise ValueError("Rename source is ambiguous")
-        return old
-
     @lru_cache(maxsize=None)
     def versions(file):
         if "\\" in file:
             raise ValueError(f"use '/' separators in {file!r}")
         path = (root / file).relative_to(repo).as_posix()
         right = committed(head, path) if explicit else working(path)
-        old = rename_source(path, right) if path in destinations and sources else path
-        left = committed(base, old)
+        left = committed(base, path)
         if left is None and right is None:
             raise ValueError("File is absent from both compared versions")
         return left, right

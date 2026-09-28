@@ -95,82 +95,15 @@ export async function prepareComparison(root: string, compare: NonNullable<Walk[
     return disk.get(file)!
   }
 
-  const destinations: string[] = []
-
-  for (const file of paths) {
-    if (!beforeModes.has(file) && (await after(file)).version?.exists) destinations.push(file)
-  }
-
-  const sources: string[] = []
-  let renameProblem: string | undefined
-
-  // Existing-file walks do not inspect unrelated paths for possible renames.
-  if (destinations.length) {
-    try {
-      const baseTree = await treeFiles(repo, base)
-      const headTree = head ? await treeFiles(repo, head) : undefined
-
-      for (const [file, mode] of baseTree) {
-        beforeModes.set(file, mode)
-
-        if (headTree) {
-          if (!headTree.has(file)) sources.push(file)
-        } else {
-          try {
-            await lstat(join(repo, file))
-          } catch (error) {
-            if (error instanceof Error && 'code' in error && error.code === 'ENOENT') sources.push(file)
-          }
-        }
-      }
-    } catch (error) {
-      renameProblem = errorMessage(error)
-    }
-  }
-
   return new Map(
     await Promise.all(
       [...new Set(files)].map(async (file): Promise<[string, FileComparison]> => {
         const path = relative(repo, join(root, file)).split('\\').join('/')
         const right = await after(path)
-        let left = await before(path)
-        let target = right.version?.exists ? right.version : right.version ? left.version : undefined
+        const left = await before(path)
+        const target = right.version?.exists ? right.version : right.version ? left.version : undefined
 
         try {
-          if (destinations.includes(path) && renameProblem) throw new Error(renameProblem)
-
-          if (!beforeModes.has(path) && right.version?.exists && sources.length) {
-            let best = 0.5
-            let ambiguous = false
-
-            for (const source of sources) {
-              const candidate = await before(source)
-
-              if (!candidate.version?.exists) continue
-              const hunks = await diffVersions(repo, candidate.version, right.version)
-
-              const score =
-                candidate.version.text === right.version.text
-                  ? 1
-                  : (lineCount(candidate.version.text) - hunks.reduce((n, h) => n + h.oldCount, 0)) /
-                    Math.max(lineCount(candidate.version.text), lineCount(right.version.text), 1)
-
-              if (score < best) continue
-
-              if (score === best && left.version?.exists) {
-                ambiguous = true
-                continue
-              }
-
-              best = score
-              left = candidate
-              ambiguous = false
-            }
-
-            if (ambiguous) throw new Error('Rename source is ambiguous')
-          }
-
-          target = right.version?.exists ? right.version : right.version ? left.version : undefined
           const reason = left.reason ?? right.reason
 
           if (reason || !left.version || !right.version)

@@ -1,6 +1,7 @@
 import { execFile, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { finished } from 'node:stream/promises'
 import { promisify } from 'node:util'
 
 const exec = promisify(execFile)
@@ -15,8 +16,9 @@ export async function git(root: string, args: string[], input?: Buffer) {
       env: { ...process.env, LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_LITERAL_PATHSPECS: '1' },
     })
 
+    const written = running.child.stdin ? finished(running.child.stdin) : Promise.resolve()
     running.child.stdin?.end(input)
-    const { stdout } = await running
+    const [{ stdout }] = await Promise.all([running, written])
 
     return stdout
   } catch (cause) {
@@ -48,7 +50,7 @@ export async function comparisonEndpoints(root: string, base: string, head?: str
   return { repo, base: bases[0], head: head === undefined ? undefined : headCommit }
 }
 
-export async function treeFiles(repo: string, revision: string, paths: string[] = []) {
+export async function treeFiles(repo: string, revision: string, paths: string[]) {
   const tree = await git(repo, ['ls-tree', '-rz', '--full-tree', revision, '--', ...paths])
 
   return new Map(
