@@ -17,6 +17,16 @@ export async function git(root: string, args: string[]) {
 
     return stdout
   } catch (cause) {
+    if (
+      args.includes('--no-index') &&
+      cause instanceof Error &&
+      'code' in cause &&
+      cause.code === 1 &&
+      'stdout' in cause &&
+      Buffer.isBuffer(cause.stdout)
+    )
+      return cause.stdout
+
     throw new Error(`Git ${args[0]} failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause })
   }
 }

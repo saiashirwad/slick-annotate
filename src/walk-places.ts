@@ -2,9 +2,8 @@ import * as vscode from 'vscode'
 import { join } from 'node:path'
 import { errorMessage } from './errors.ts'
 import { locate, type LineRange, type Located } from './locate.ts'
-import { wholeLines } from './lines.ts'
 import {
-  diskText,
+  plainDiskText,
   prepareComparison,
   scopeComparison,
   scopedHunks,
@@ -44,7 +43,7 @@ export function documentRange(document: vscode.TextDocument, range?: LineRange) 
   const start = Math.min(range.start - 1, document.lineCount - 1)
   const end = Math.min(range.end - 1, document.lineCount - 1)
 
-  return wholeLines(document, new vscode.Range(start, 0, end, document.lineAt(end).range.end.character))
+  return new vscode.Range(start, 0, end, document.lineAt(end).range.end.character)
 }
 
 export async function preparePlaces(root: string, walk: Walk) {
@@ -63,11 +62,13 @@ export async function preparePlaces(root: string, walk: Walk) {
   const disk = new Map<string, string | undefined>()
   const problems = new Map<string, string>()
 
-  if (!walk.compare || (comparisonProblem && walk.compare.head === undefined)) {
+  if (walk.compare?.head === undefined) {
     await Promise.all(
       files.map(async (file) => {
+        if (comparisons?.get(file)?.file || comparisons?.get(file)?.target) return
+
         try {
-          disk.set(file, await diskText(root, file))
+          disk.set(file, await plainDiskText(root, file))
         } catch (error) {
           problems.set(file, errorMessage(error))
         }
@@ -122,8 +123,14 @@ export async function preparePlaces(root: string, walk: Walk) {
           }
         }
 
-        const text = disk.get(place.file)
-        const uri = text === undefined ? undefined : vscode.Uri.file(join(root, place.file))
+        const text = result?.target?.text ?? disk.get(place.file)
+
+        const uri = result?.target
+          ? versionUri(result.target)
+          : text === undefined
+            ? undefined
+            : vscode.Uri.file(join(root, place.file))
+
         const target = uri && text !== undefined ? found(uri, text, place.quote) : undefined
         const reason = result?.reason ?? comparisonProblem
 

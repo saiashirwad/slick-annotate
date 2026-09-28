@@ -58,9 +58,11 @@ Every step has a note box. A walk can also add either or both of these top-level
 - `"compare": { "base": "main", "head": "feature" }` adds per-place +/− counts and **Open diff**.
 - Combine them, for example `"check": "Keep"` alongside `"compare": { "base": "main" }`. Omitting both gives a plain explanation.
 
-Compare uses the merge-base of base and head on the left. With `head` omitted, HEAD determines the merge-base and the right side is the real working tree, including uncommitted edits and untracked files. Explicit head opens read-only committed content. Place navigation prefers the head side, falling back to base for deleted files. Branch refs must already exist locally; Tandem never fetches, checks out, or merges.
+Compare uses the merge-base of base and head on the left. With `head` omitted, HEAD determines the merge-base and the right side is the real working tree, including uncommitted edits and untracked files. Counts use disk content even after index removals; unstaged renames use the old base path. Preparation compares temporary copies of the loaded contents, then removes them, without changing the repository or index. Explicit head opens read-only committed content. Place navigation prefers the head side, falling back to base for deleted files. Branch refs must already exist locally; Tandem never fetches, checks out, or merges.
 
 Unquoted counts cover the whole file. Quoted counts include exactly the zero-context hunks intersecting the unique quote's whole lines on either version, each hunk once. No intersection gives +0/−0; missing or ambiguous quotes make scoped counts unavailable. **Open diff** still opens the full files when endpoints are usable, with quote-based reveal. Renames use the new path and compare old against new; additions/deletions use an empty side. Binary files, symlinks, submodules and Git failures show an unavailable reason without blocking prose or notes.
+
+A file-specific comparison failure affects only that place's comparison; readable head/disk navigation and other places still work. Plain walks can follow in-workspace symlinks. Whole-line highlights include quoted blank lines.
 
 Counts and place ranges are prepared once per walk load. Save the walk again to refresh them; navigating, typing notes, editing source, and opening diffs do not refresh counts. Native working-tree diffs remain live. A hypothetical edit belongs in an ordinary Markdown `diff` fence, not a comparison; neither applies an edit.
 
@@ -119,6 +121,8 @@ bun run build
 Press **F5** to open an Extension Development Host. To use the extension in your regular window, run **Developer: Install Extension from Location…** and select this folder. Run `bun run watch` while editing, then **Developer: Reload Window** after rebuilding.
 
 `bun run package` runs type, lint, and formatting checks and builds a self-contained VSIX in `dist/`. Install it with **Extensions: Install from VSIX…**. Users do not need Bun or a separate Node.js installation. CI also produces a downloadable VSIX on pushes to `main` and pull requests.
+
+Run `bun run test` for comparison/place regressions and the validator's disposable-repository tests (Python 3.9+). These check that preparation preserves the index and working tree; native VS Code UI still needs manual verification.
 
 Before releasing, try annotations, walks, diagrams, diffs, review submission, and persistence after reload in a fresh VS Code profile, including on the minimum supported version. Upload updates through the [Marketplace publisher page](https://marketplace.visualstudio.com/manage).
 

@@ -300,6 +300,7 @@
     "build": "bun run bundle && bun tools/package-assets.ts",
     "watch": "bun run build && bun run bundle --watch",
     "check": "tsc --noEmit && tsc --noEmit -p media && tsc --noEmit -p tools && bun run lint",
+    "test": "bun test tests && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s skills/tandem/scripts -p 'test_*.py'",
     "lint": "oxlint src media tools/package-assets.ts",
     "format:check": "prettier --check .",
     "vscode:prepublish": "bun run check && bun run format:check && bun run build",

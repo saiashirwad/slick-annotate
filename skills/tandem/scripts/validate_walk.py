@@ -11,6 +11,7 @@ import re
 import sys
 import os
 import subprocess
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import unquote
@@ -122,12 +123,51 @@ def git(root, *args):
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise ValueError(f"Git unavailable: {error}") from error
-    if result.returncode:
+    if result.returncode and not ("--no-index" in args and result.returncode == 1):
         raise ValueError(f"Git {args[0]} failed: {result.stderr.decode(errors='replace').strip()}")
     return result.stdout
 
 
-def comparison_sources(root, compare):
+def patch_path(path):
+    if not re.search(r'[\x00-\x1f\x7f"\\]', path):
+        return path
+    escapes = dict(zip('\a\b\t\n\v\f\r"\\', ['\\a', '\\b', '\\t', '\\n', '\\v', '\\f', '\\r', '\\"', '\\\\']))
+    return '"' + re.sub(r'[\x00-\x1f\x7f"\\]', lambda m: escapes.get(m[0], f"\\{ord(m[0]):03o}"), path) + '"'
+
+
+def parse_changes(output, snapshot=False):
+    records = output.decode(errors="replace").split("\0")
+    changes, headers, seen = {}, {}, set()
+    index = 0
+    unprefix = lambda path: re.sub(r"^(before|after)/", "", path) if snapshot else path
+    while records[index].startswith(":"):
+        status = records[index].split(" ")[4]
+        old = records[index + 1]
+        index += 2
+        new = old
+        if status.startswith(("R", "C")):
+            new = records[index]
+            index += 1
+        elif snapshot and status == "M":
+            new = re.sub(r"^before/", "after/", old)
+        file = unprefix(new)
+        changes[file] = {"old": unprefix(old), "reason": None}
+        if status[0] not in "AMDRC":
+            changes[file]["reason"] = f"Unsupported Git file change: {status}"
+        headers[f"{patch_path('a/' + old)} {patch_path('b/' + new)}"] = file
+    for patch in re.split(r"^diff --git ", "\0".join(records[index:]).lstrip("\0"), flags=re.M)[1:]:
+        file = headers.get(patch.split("\n", 1)[0])
+        if file is None:
+            continue
+        seen.add(file)
+        if re.search(r"^Binary files |^GIT binary patch", patch, re.M):
+            changes[file]["reason"] = "Binary file: comparison unavailable"
+    for file in changes.keys() - seen:
+        changes[file]["reason"] = "Cannot find the Git patch for this file"
+    return changes
+
+
+def comparison_sources(root, compare, files):
     repo = Path(git(root, "rev-parse", "--show-toplevel").decode().strip())
     def revision(ref):
         return git(repo, "rev-parse", "--verify", "--end-of-options", ref + "^{commit}").decode().strip()
@@ -141,55 +181,91 @@ def comparison_sources(root, compare):
         entries = git(repo, "ls-tree", "-rz", "--full-tree", commit).decode().split("\0")
         return {entry.split("\t", 1)[1]: entry.split(" ", 1)[0] for entry in entries if entry}
     before, after = tree(base), tree(head) if explicit else None
-    changes = git(repo, "diff", "--raw", "-z", "--patch", "--no-abbrev", "--no-color", "--unified=0", "--inter-hunk-context=0", "--find-renames", "--no-ext-diff", "--no-textconv", base, *([head] if explicit else []), "--").decode(errors="replace").split("\0")
-    renames = {}
-    ordered = []
-    index = 0
-    while changes[index].startswith(":"):
-        metadata, old = changes[index:index + 2]
-        status = metadata.split(" ")[4]
-        index += 2
-        file = old
-        if status.startswith(("R", "C")):
-            file = changes[index]
-            renames[file] = old
-            index += 1
-        ordered.append(file)
-    patches = re.split(r"^diff --git ", "\0".join(changes[index:]).lstrip("\0"), flags=re.M)[1:]
-    if len(patches) != len(ordered):
-        raise ValueError("Cannot pair Git file changes with patches")
-    binary = {file for file, patch in zip(ordered, patches) if re.search(r"^Binary files |^GIT binary patch", patch, re.M)}
+    reads = {}
+    def cached(key, read):
+        if key not in reads:
+            try:
+                reads[key] = read()
+            except (OSError, ValueError) as error:
+                reads[key] = error
+        if isinstance(reads[key], Exception):
+            raise reads[key]
+        return reads[key]
 
-    @lru_cache(maxsize=None)
     def committed(commit, file):
-        data = git(repo, "show", f"{commit}:{file}")
-        if b"\0" in data:
-            raise ValueError("Binary file: comparison unavailable")
-        return data.decode("utf-8-sig")
+        def read():
+            mode = (before if commit == base else after).get(file)
+            if mode is None:
+                return None
+            if mode not in ("100644", "100755"):
+                raise ValueError("Symlink or submodule: comparison unavailable")
+            data = git(repo, "show", f"{commit}:{file}")
+            if b"\0" in data:
+                raise ValueError("Binary file: comparison unavailable")
+            return data.decode("utf-8-sig")
+        return cached((commit, file), read)
+
+    def working(file):
+        def read():
+            target = repo
+            for part in Path(file).parts:
+                target /= part
+                if target.is_symlink():
+                    raise ValueError("Symlink: comparison unavailable")
+            if not target.exists():
+                return None
+            text = source_text(source_path(repo, file))
+            if "\0" in text:
+                raise ValueError("Binary file: comparison unavailable")
+            return text
+        return cached((None, file), read)
+
+    options = ["--raw", "-z", "--patch", "--no-abbrev", "--no-color", "--unified=0", "--inter-hunk-context=0", "--find-renames", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/"]
+    selected = {(root / file).relative_to(repo).as_posix() for file in files}
+    for file in before:
+        if explicit:
+            if file not in after:
+                selected.add(file)
+        else:
+            try:
+                (repo / file).lstat()
+            except FileNotFoundError:
+                selected.add(file)
+            except OSError:
+                pass
+    failures = {}
+    with tempfile.TemporaryDirectory(prefix="tandem-compare-") as temporary:
+        temporary = Path(temporary)
+        for side in ("before", "after"):
+            (temporary / side).mkdir()
+        for file in sorted(selected):
+            try:
+                versions = [("before", committed(base, file)), ("after", committed(head, file) if explicit else working(file))]
+            except (OSError, ValueError) as error:
+                failures[file] = {"old": file, "reason": str(error)}
+                continue
+            for side, text in versions:
+                try:
+                    if text is not None:
+                        path = temporary / side / file
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        with path.open("w", encoding="utf-8", newline="") as output:
+                            output.write(text)
+                except (OSError, ValueError) as error:
+                    failures[file] = {"old": file, "reason": str(error)}
+        changes = parse_changes(git(temporary, "-c", "core.quotePath=false", "diff", "--no-index", *options, "--", "before", "after"), snapshot=True)
+    changes.update(failures)
 
     @lru_cache(maxsize=None)
     def versions(file):
         if "\\" in file:
             raise ValueError(f"use '/' separators in {file!r}")
         path = (root / file).relative_to(repo).as_posix()
-        if path in binary:
-            raise ValueError("Binary file: comparison unavailable")
-        old = renames.get(path, path)
-        modes = [before.get(old), after.get(path) if after is not None else None]
-        if any(mode and mode not in ("100644", "100755") for mode in modes):
-            raise ValueError("Symlink or submodule: comparison unavailable")
-        left = committed(base, old) if old in before else None
-        if explicit:
-            right = committed(head, path) if path in after else None
-        else:
-            target = root
-            for part in Path(file).parts:
-                target /= part
-                if target.is_symlink():
-                    raise ValueError("Symlink: comparison unavailable")
-            right = source_text(source_path(root, file)) if target.exists() else None
-            if right is not None and "\0" in right:
-                raise ValueError("Binary file: comparison unavailable")
+        change = changes.get(path, {"old": path, "reason": None})
+        if change["reason"]:
+            raise ValueError(change["reason"])
+        left = committed(base, change["old"])
+        right = committed(head, path) if explicit else working(path)
         if left is None and right is None:
             raise ValueError("File is absent from both compared versions")
         return left, right
@@ -465,7 +541,7 @@ def validate(walk, root):
     comparison_failed = False
     if "compare" in walk:
         try:
-            versions = comparison_sources(root, walk["compare"])
+            versions = comparison_sources(root, walk["compare"], {place["file"] for step in walk["steps"] for place in step["places"]})
         except (OSError, ValueError) as error:
             errors.append(f"Comparison unavailable (walk structure is valid): {error}")
             comparison_failed = True

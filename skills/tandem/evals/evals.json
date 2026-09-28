@@ -4,19 +4,19 @@
     {
       "id": 1,
       "prompt": "Use Tandem to explain how this extension keeps my review when the agent rewrites a walk. Include a diagram and links to the related code. I want to understand the behavior, not change it.",
-      "expected_output": "A valid .tandem/walk.json with a focused explanation, exact unique source quotes, and a Mermaid diagram. Names in the prose that point at existing code are Markdown links (a code span as the text, a unique quote in the destination), not bare code spans. Refs are named phrases for places the sentence does not already name. No proposals or source edits. Explains title/ID identity and the four approval snapshot fields accurately.",
+      "expected_output": "A valid .tandem/walk.json with ordered places on every step, exact unique source quotes, and a Mermaid diagram. Existing code names in prose are Markdown links. Explains title/ID identity, sparse notes with both ok and text, removal of empty notes and resetting ok when check is removed. Notes survive prose rewrites without staleness tracking. No source edits.",
       "files": []
     },
     {
       "id": 2,
-      "prompt": "Propose a Tandem change so approvals also become stale when a proposal's target file changes. Show me the exact intended edits in the walk before implementing anything.",
-      "expected_output": "A valid walk with context and reviewable proposal diffs covering the relevant approval storage and comparison code, plus compatibility implications. Every navigation anchor resolves, including Markdown links in the prose. Source files remain unchanged; handoff explains how to review.",
+      "prompt": "Use Tandem to propose clearer wording when a comparison quote is missing from both versions. Show the exact intended edit in prose before implementing anything. Give each step a Keep checkbox.",
+      "expected_output": "A valid walk with check: Keep, context, ordered places and one reviewable decision. Exact edits use an ordinary Markdown diff fence, not a step field. Explains that full-file diff endpoints remain openable while scoped counts are unavailable. Every place and prose link resolves. Source files remain unchanged; handoff explains notes and Submit Review.",
       "files": []
     },
     {
       "id": 3,
-      "prompt": "I submitted my Tandem review. Read it and my annotations. Answer the questions and revise the walk to address my responses, keeping the proposals I already approved intact. Some code has moved since I annotated it.",
-      "expected_output": "Uses current walk and review plus session input; checks title, IDs and snapshot equality; accounts for explanatory responses and historical snippets; preserves continuing IDs/title and unchanged proposals; treats missing approvals as unresolved rather than rejected; leaves reader-owned JSON and source code unchanged. Requires a seeded walk/review/session fixture before execution.",
+      "prompt": "I submitted my Tandem review. Read it and my annotations. Answer the questions and revise the walk to address my notes, keeping the decisions I checked intact. Some code has moved since I annotated it.",
+      "expected_output": "Uses current walk, sparse notes and session input; checks title and IDs, interprets ok using the walk's check label and text, and accounts for historical snippets. Preserves continuing IDs/title and requested decisions without inventing approval snapshots or staleness checks. An unchecked box alone is not rejection or permission. Leaves reader-owned JSON and source unchanged. Requires seeded walk/review/session fixtures.",
       "files": []
     },
     {
@@ -28,7 +28,7 @@
     {
       "id": 5,
       "prompt": "Write a Tandem proposal to improve the error when a source quote matches several places. Show one exact edit in walk.ts and explain the related documentation updates as part of the same proposal. Validate the walk before handing it over.",
-      "expected_output": "One reviewable decision with a single-file exact diff, explicit prose scope for the companion documentation changes, and named source refs. Existing names in the prose are Markdown links. Uses supported diff syntax and the bundled validator; does not split steps merely to follow file boundaries or imply the displayed diff covers all edits. Source remains unchanged.",
+      "expected_output": "One reviewable decision with an ordinary Markdown diff fence, explicit prose scope for companion documentation changes, and ordered labeled places. Existing names in prose are Markdown links. Runs the bundled validator without claiming it validates diff fences as patches. Does not split steps just to follow file boundaries or imply the fenced edit covers all changes. Source remains unchanged.",
       "files": []
     }
   ]

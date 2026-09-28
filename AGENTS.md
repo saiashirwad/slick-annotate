@@ -19,7 +19,7 @@ Neither imports the other; what both need gets its own module (`lines.ts`, `git.
 
 ## Checking
 
-`bun run check` and `bun run format:check` must pass. `bun run package` runs both checks and the Bun build before producing the VSIX. There are no tests: rebuild, run **Developer: Reload Window** (the extension is installed from this folder), and try the change.
+`bun run check`, `bun run test` and `bun run format:check` must pass. The regression checks use disposable Git repositories and require Python 3.9+ for the validator tests. `bun run package` runs type/lint and formatting checks and the Bun build before producing the VSIX. For native UI changes, rebuild, run **Developer: Reload Window** (the extension is installed from this folder), and try the change.
 
 ## Publishing
 
