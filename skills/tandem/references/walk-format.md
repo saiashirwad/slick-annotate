@@ -1,54 +1,46 @@
 # Walk format
 
-Only these keys. Unknown keys are rejected and the previous walk stays up.
+Only these keys are accepted. Old walk and review formats are rejected without migration; an invalid walk leaves the last good document visible.
 
 ```ts
-type Walk = { $schema?: string; title: string; steps: Step[] }
+type Walk = {
+  title: string
+  steps: Step[]
+  check?: string
+  compare?: { base: string; head?: string }
+}
 type Step = {
   id: string
   title: string
   body: string
   details?: string
-  file?: string
-  quote?: string
-  refs?: { file: string; quote?: string; label?: string }[]
-  proposal?: boolean
-  diff?: string
+  places: Place[]
 }
+type Place = { file: string; quote?: string; label?: string }
 ```
 
-`id` is a stable name (`persist-review`), unique, not a position. `quote` needs `file`. `diff` needs `proposal: true`. Paths are workspace-relative (`/`), never absolute or `..`.
+Ids are nonempty, unique stable names, not positions. Paths are workspace-relative (`/`), never absolute or containing `..`. Every step requires `places`, including `[]` for prose-only steps. All places appear below the body; focusing opens the first. A place's optional label replaces its displayed path.
 
-A quote is a literal slice of the file, whitespace included, and must occur once. No line numbers, regex, or ellipses. A short unique slice is enough; the highlight is the whole lines it touches. Take it from the file you just read. The step's own `file` and `quote` are what focusing it highlights.
+A quote is a nonempty literal slice, whitespace included, not a line number, regex or ellipsis. Take it from source you just read; it must occur exactly once. Highlighting covers whole touched lines, excluding a final line touched only at column zero. Comparison quotes may come from either version; ambiguity in either makes the scope unavailable.
 
-## Links
+`check` is a nonempty checkbox label on every step, such as `"Approve"` or `"Keep"`. There are no per-step kinds. `compare` is independent: neither option, either alone, or both may be present. Its refs must be nonempty and locally available; see [branch walks](branch-walk.md) for endpoint and count semantics.
 
-Clicking a link opens that code and does not leave the step.
+## Prose and links
 
-A name in `body` or `details` that points at existing code is a link, not a bare code span. The text is the name, as code. The target is `file#quote`. The quote is a unique one-line slice, and it need not contain the name: `[`submitReview`](<src/submit.ts#export async function submitReview(>)` opens the declaration, not a search for the visible word.
+Mermaid and ordinary code fences work in body and details. A `diff` fence is prose: neither Tandem nor its validator interprets it as a patch, opens it as a comparison, or applies it.
 
-Use angle brackets. A destination cannot contain a raw newline or an unescaped `<` or `>`. Escape those as `\<` and `\>`, and let the JSON encoder write the backslashes. Prefer a slice that needs no escape (`export const dispatch`, not the generic signature). A name that is not in the source yet stays a code span. Do not point it at the code it replaces.
+A name pointing at existing code is a link, not a bare code span. Use `[`submitReview`](<src/submit.ts#export async function submitReview(>)`: the text names the code and the target is a unique literal slice, not necessarily that name. Use angle brackets; escape `<` and `>` in destinations as `\<` and `\>`, and avoid raw newlines. Let the JSON encoder write the backslashes. A name that does not yet exist stays a code span.
 
-Refs are places the sentence does not already name, shown under the step. Set `label` to a phrase ("where the review is copied"), not the path — without one, the link is the filename. Set `quote`, or the click only opens the file. Do not repeat an inline link as a ref. A link with no quote only opens the file: `[the session](src/session.ts)`. Mermaid fences work in `body` and `details`.
-
-## Diffs
-
-A `diff` previews one file: ` ` context, `-` removed, `+` added. File and hunk headers are optional; a line with no sign is context. Tandem renders both sides from this text alone. It neither applies the edit nor checks hunk counts against source. Include real context so the replacement is clear. A diff is the intended edit, not pseudocode.
-
-The one-file limit belongs to the preview, not the proposal. A coordinated multi-file proposal can explain the complete change in `body`/`details` with refs. If it includes one file's diff, state which part that diff covers.
-
-For an existing-file diff, set `file` to that file or supply `--- a/path` and `+++ b/path` headers. Headers must name the same file as `file` when both are present. For a new file, omit the step's `file` and `quote`, name the path in prose, and use `--- /dev/null` and `+++ b/path` if including a creation diff. Use refs to show the existing code that motivates it.
-
-For a short edit, a headerless before/after snippet avoids hunk arithmetic. When providing numeric unified hunks, generate them from before/after text rather than counting lines by hand. Plain `---`/`+++` headers work; omit Git metadata such as `diff --git` and `index`, which Tandem would display as context.
+Inline links always open current workspace files, independently of comparison or the focused step. Without a quote, `[the session](src/session.ts)` opens the file. Places can include supporting locations not already named by a sentence.
 
 ## Validation
 
-Run the bundled helper with Python 3.9+; it uses only the standard library:
+Run the bundled standard-library-only helper with Python 3.9+:
 
 ```sh
 python3 /path/to/tandem/scripts/validate_walk.py /path/to/workspace
 ```
 
-Replace `/path/to/tandem` with the installed skill directory. The workspace argument is the VS Code workspace root. By default it checks `.tandem/walk.json`; add `--walk /path/to/draft.json` to validate a candidate before replacing the current walk.
+Replace `/path/to/tandem` with the installed skill directory. It checks `.tandem/walk.json`; use `--walk /path/to/draft.json` to check a candidate first.
 
-The helper checks the schema, unique IDs, existing source anchors, Markdown links in `body` and `details`, and one-file diff previews. It checks each diff's before-text against source and verifies numeric hunk counts when supplied. A link is checked like a ref: the path must exist, and a quote must occur once. These authoring checks are stricter than the extension's display parser. It reports errors by step, ref, or link, and never changes files. It does not render the view or establish that proposed code compiles.
+The helper checks strict structure, unique ids, every place and Markdown link. Compare anchors use read-only local Git, with shared version reads and rename discovery; inline links still use disk. Missing or ambiguous anchors are authoring diagnostics. Git failures are reported separately from structural validity and do not prevent Tandem from displaying a structurally valid walk or recording notes. Validation never changes files, renders the view, or proves proposed code compiles.

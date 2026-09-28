@@ -5,29 +5,23 @@
 ```ts
 type Review = {
   title: string
-  submittedAt?: string
-  steps: {
-    id: string
-    response?: string
-    approved?: { body: string; details?: string; quote?: string; diff?: string }
-  }[]
+  submitted?: string
+  notes: Record<string, { ok: boolean; text: string }>
 }
 ```
 
-`approved` is that snapshot, not a boolean. It still holds only if the walk title matches, the step id exists, the step is a proposal, and those four fields are equal — absent and `""` are different. `file`, `refs`, and the step title are not in the snapshot. A response on an approved step still needs an answer. Empty entries are omitted.
+Keys are step ids. Every stored note has both fields; an absent id reads as `{ ok: false, text: "" }`. Whitespace-only text becomes empty, other text is preserved. False/empty pairs are removed: there is no touched-but-empty state. Without `check`, `ok` is false, including when that option is removed. Checks survive prose rewrites; nothing snapshots or certifies exact text.
 
-The extension has one proposal kind. Prose-only architectural proposals and exact diffs use the same approval mechanism; interpret the approval against the scope stated in `body`/`details`, including any declared limits of a partial diff.
+`submitted` is the last **Submit Review** time, retained through later note edits. Submission clears nothing and does not freeze a review, notify an agent, or request implementation.
 
-`submittedAt` is the last **Submit Review**, kept across later edits. It is not a frozen review and not a handoff. Act when they ask, not because the file changed. Submit clears nothing. Approval does not mean the edit is in the tree.
-
-A paste starts `# Review of the walk "..."`. Proposals come first (`Approved.` / `Not approved.` and any response), then responses on other steps, then `# Annotations`. If the paste and the file disagree, ask which to follow.
+Clipboard text starts `Review: <title>  (submitted <time>)`, then only steps with text or a check, in walk order. With `check`, each heading is `[x] <label> — <step title>` (or `[ ]` for text with an unchecked box); without it, only the title. Note text is indented below. Annotations follow as `# Annotations`. If a paste and the file disagree, ask which to follow.
 
 ## Annotations
 
-`session.json` is `{ annotations: { id, threadId, file, range?, snippet, body, createdAt }[] }`. Same `threadId` shares file, range, and snippet, in creation order. `range` is zero-based; no range and `snippet: ""` means the whole file.
+`session.json` is `{ annotations: { id, threadId, file, range?, snippet, body, createdAt }[] }`. Same `threadId` shares file, range and snippet, in creation order. `range` is zero-based; no range and `snippet: ""` means the whole file.
 
-A paste uses one-based `path:40-52` or a bare path. The fenced snippet is only on the thread's first note, and it is the code as it was then. Read the file before answering or editing, and say if it moved. A question wants an explanation unless they asked for a change. Don't edit their annotations.
+A paste uses one-based `path:40-52` or a bare path. The fenced snippet appears only on the thread's first annotation, and is the code as it was then. Read current source before answering or editing, and say if it moved. A question wants an explanation unless a change was requested.
 
 ## If they ask how
 
-**Alt+A** annotates the selection, or the thread under the cursor if nothing is selected. **Annotate File** is the whole file. **Walk** is in the activity bar; **Alt+]** / **Alt+[** move. A linked name in a step opens that code and does not leave the step. **Approve this change** or **Alt+Enter** toggles the focused proposal. **Submit Review** copies the review and the session. **Clear Tandem Session** deletes annotations only; **Clear Walk** deletes the walk and review only.
+**Alt+A** annotates the selection or the thread under the cursor. **Annotate File** covers the whole file. **Walk** is in the activity bar; **Alt+]** / **Alt+[** move between steps. Clicking a place or prose link does not change the focused step. Checks use the checkbox control; there is no toggle command or Alt+Enter binding. A collapsed step shows ✓ when checked and ✎ when it has text. **Submit Review** copies review and session. **Clear Tandem Session** deletes annotations only; **Clear Walk** deletes walk and review only.

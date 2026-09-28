@@ -2,7 +2,6 @@
 """Read-only walk authoring checks. Python 3.9+, standard library only.
 
 Schema rules mirror src/walk-data.ts and src/validation.ts in Tandem.
-Diff lines follow src/walk-diff.ts, with additional source and hunk checks.
 Markdown links follow the click handler in media/walk.js: split on the first `#`, then decode.
 """
 
@@ -10,6 +9,9 @@ import argparse
 import json
 import re
 import sys
+import os
+import subprocess
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -43,15 +45,23 @@ def valid_path(value):
 
 def schema_errors(walk):
     errors = []
-    if not fields(walk, {"title": str, "steps": list}, {"$schema": str}, "Walk", errors):
+    if not fields(walk, {"title": str, "steps": list}, {"check": str, "compare": dict}, "Walk", errors):
         return errors
+    if "check" in walk and not walk["check"]:
+        errors.append("Walk.check: must not be empty")
+    if "compare" in walk:
+        compare = walk["compare"]
+        if fields(compare, {"base": str}, {"head": str}, "Walk.compare", errors):
+            for key, value in compare.items():
+                if not value:
+                    errors.append(f"Walk.compare.{key}: must not be empty")
     ids = set()
     for index, step in enumerate(walk["steps"]):
         where = f"Step {index + 1}"
         if not fields(
             step,
-            {"id": str, "title": str, "body": str},
-            {"details": str, "file": str, "quote": str, "refs": list, "proposal": bool, "diff": str},
+            {"id": str, "title": str, "body": str, "places": list},
+            {"details": str},
             where,
             errors,
         ):
@@ -62,15 +72,11 @@ def schema_errors(walk):
         if step["id"] in ids:
             errors.append(f"{where}: duplicate id")
         ids.add(step["id"])
-        if "quote" in step and "file" not in step:
-            errors.append(f"{where}: a quote requires a file")
-        if "diff" in step and step.get("proposal") is not True:
-            errors.append(f"{where}: a diff requires proposal: true")
-        anchors = [(where, step)]
-        for ref_index, ref in enumerate(step.get("refs", [])):
-            ref_where = f"{where}, ref {ref_index + 1}"
-            if fields(ref, {"file": str}, {"quote": str, "label": str}, ref_where, errors):
-                anchors.append((ref_where, ref))
+        anchors = []
+        for place_index, place in enumerate(step["places"]):
+            location = f"{where}, place {place_index + 1}"
+            if fields(place, {"file": str}, {"quote": str, "label": str}, location, errors):
+                anchors.append((location, place))
         for location, anchor in anchors:
             if "file" in anchor and not valid_path(anchor["file"]):
                 errors.append(f"{location}: expected a path inside the workspace")
@@ -92,6 +98,7 @@ def source_path(root, name):
     return path
 
 
+@lru_cache(maxsize=None)
 def source_text(path):
     # VS Code excludes the encoding BOM from document text; preserve CRLF for quotes.
     with path.open(encoding="utf-8-sig", newline="") as source:
@@ -107,112 +114,86 @@ def quote_count(text, quote):
     return count
 
 
-def header_path(line, prefix):
-    name = line[4:].split("\t", 1)[0]
-    return name[len(prefix):] if name.startswith(prefix) else name
+def git(root, *args):
+    try:
+        result = subprocess.run(
+            ["git", *args], cwd=root, capture_output=True, timeout=30,
+            env={**os.environ, "LC_ALL": "C", "GIT_OPTIONAL_LOCKS": "0", "GIT_LITERAL_PATHSPECS": "1"},
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ValueError(f"Git unavailable: {error}") from error
+    if result.returncode:
+        raise ValueError(f"Git {args[0]} failed: {result.stderr.decode(errors='replace').strip()}")
+    return result.stdout
 
 
-def check_diff(step, root):
-    lines = [line.removesuffix("\r") for line in step["diff"].removesuffix("\n").split("\n")]
-    before_name = after_name = step.get("file")
-    if lines[0].startswith(("--- ", "+++ ")):
-        if len(lines) < 2 or not lines[0].startswith("--- ") or not lines[1].startswith("+++ "):
-            raise ValueError("use paired --- and +++ file headers")
-        before_name = header_path(lines[0], "a/")
-        after_name = header_path(lines[1], "b/")
-        lines = lines[2:]
-    if before_name is None or after_name is None:
-        raise ValueError("set file for an existing-file diff, or provide ---/+++ headers")
-    creating = before_name == "/dev/null"
-    deleting = after_name == "/dev/null"
-    if creating and deleting:
-        raise ValueError("both diff paths are /dev/null")
-    if not creating and not deleting and before_name != after_name:
-        raise ValueError("one diff previews one file; describe moves in the proposal")
-    target = after_name if creating else before_name
-    if "file" in step and step["file"] != target:
-        raise ValueError(f"diff target {target!r} differs from step.file {step['file']!r}")
-    path = source_path(root, target)
-    if creating and path.exists():
-        raise ValueError(f"creation target {target!r} already exists")
-    source = [] if creating else source_text(path).splitlines()
+def comparison_sources(root, compare):
+    repo = Path(git(root, "rev-parse", "--show-toplevel").decode().strip())
+    def revision(ref):
+        return git(repo, "rev-parse", "--verify", "--end-of-options", ref + "^{commit}").decode().strip()
+    base, head = revision(compare["base"]), revision(compare.get("head", "HEAD"))
+    bases = git(repo, "merge-base", "--all", base, head).decode().strip().splitlines()
+    if len(bases) != 1:
+        raise ValueError("Comparison needs exactly one merge-base")
+    base = bases[0]
+    explicit = "head" in compare
+    def tree(commit):
+        entries = git(repo, "ls-tree", "-rz", "--full-tree", commit).decode().split("\0")
+        return {entry.split("\t", 1)[1]: entry.split(" ", 1)[0] for entry in entries if entry}
+    before, after = tree(base), tree(head) if explicit else None
+    changes = git(repo, "diff", "--raw", "-z", "--patch", "--no-abbrev", "--no-color", "--unified=0", "--inter-hunk-context=0", "--find-renames", "--no-ext-diff", "--no-textconv", base, *([head] if explicit else []), "--").decode(errors="replace").split("\0")
+    renames = {}
+    ordered = []
+    index = 0
+    while changes[index].startswith(":"):
+        metadata, old = changes[index:index + 2]
+        status = metadata.split(" ")[4]
+        index += 2
+        file = old
+        if status.startswith(("R", "C")):
+            file = changes[index]
+            renames[file] = old
+            index += 1
+        ordered.append(file)
+    patches = re.split(r"^diff --git ", "\0".join(changes[index:]).lstrip("\0"), flags=re.M)[1:]
+    if len(patches) != len(ordered):
+        raise ValueError("Cannot pair Git file changes with patches")
+    binary = {file for file, patch in zip(ordered, patches) if re.search(r"^Binary files |^GIT binary patch", patch, re.M)}
 
-    groups = []
-    header = None
-    rows = []
-    for index, line in enumerate(lines):
-        if line.startswith("diff --git ") or re.match(r"^index [0-9a-f]+\.\.[0-9a-f]+", line):
-            raise ValueError("omit Git metadata; Tandem displays it as source context")
-        if line.startswith("--- ") and index + 1 < len(lines) and lines[index + 1].startswith("+++ "):
-            raise ValueError("multiple file diffs; one diff previews one file")
-        if line.startswith("@@"):
-            if rows or header is not None:
-                groups.append((header, rows))
-            header, rows = line, []
-        elif not line.startswith("\\"):
-            rows.append(line)
-    if rows or header is not None:
-        groups.append((header, rows))
+    @lru_cache(maxsize=None)
+    def committed(commit, file):
+        data = git(repo, "show", f"{commit}:{file}")
+        if b"\0" in data:
+            raise ValueError("Binary file: comparison unavailable")
+        return data.decode("utf-8-sig")
 
-    last_end = 0
-    delta = 0
-    changed = False
-    removed = []
-    for number, (header, rows) in enumerate(groups, 1):
-        before, after = [], []
-        for line in rows:
-            if line.startswith("+"):
-                after.append(line[1:])
-                changed = True
-            elif line.startswith("-"):
-                before.append(line[1:])
-                changed = True
-            else:
-                context = line[1:] if line.startswith(" ") else line
-                before.append(context)
-                after.append(context)
-        numeric = re.fullmatch(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@.*", header or "")
-        if header and header.startswith("@@ -") and numeric is None:
-            raise ValueError(f"hunk {number}: malformed numeric header {header!r}")
-        if numeric:
-            old_start, old_count, new_start, new_count = numeric.groups()
-            old_count, new_count = int(old_count or 1), int(new_count or 1)
-            if (old_count, new_count) != (len(before), len(after)):
-                raise ValueError(
-                    f"hunk {number}: header declares {old_count} before/{new_count} after lines; "
-                    f"found {len(before)} before/{len(after)} after"
-                )
-            position = int(old_start) - (1 if old_count else 0)
-            new_position = int(new_start) - (1 if new_count else 0)
-            if new_position < 0 or new_position != position + delta:
-                raise ValueError(f"hunk {number}: new line position disagrees with preceding edits")
-        elif before:
-            matches = [
-                index for index in range(len(source) - len(before) + 1)
-                if source[index:index + len(before)] == before
-            ]
-            if len(matches) != 1:
-                raise ValueError(f"hunk {number}: before-text occurs {len(matches)} times in {target}")
-            position = matches[0]
-        elif creating:
-            position = 0
+    @lru_cache(maxsize=None)
+    def versions(file):
+        if "\\" in file:
+            raise ValueError(f"use '/' separators in {file!r}")
+        path = (root / file).relative_to(repo).as_posix()
+        if path in binary:
+            raise ValueError("Binary file: comparison unavailable")
+        old = renames.get(path, path)
+        modes = [before.get(old), after.get(path) if after is not None else None]
+        if any(mode and mode not in ("100644", "100755") for mode in modes):
+            raise ValueError("Symlink or submodule: comparison unavailable")
+        left = committed(base, old) if old in before else None
+        if explicit:
+            right = committed(head, path) if path in after else None
         else:
-            raise ValueError(f"hunk {number}: insertion needs source context or a numeric position")
-        if creating and before:
-            raise ValueError(f"hunk {number}: a creation diff cannot have before-text")
-        if deleting and after:
-            raise ValueError(f"hunk {number}: a deletion diff cannot have after-text")
-        if position < last_end or position > len(source):
-            raise ValueError(f"hunk {number}: source range overlaps, is out of order, or is outside {target}")
-        if source[position:position + len(before)] != before:
-            raise ValueError(f"hunk {number}: before-text does not match {target} at line {position + 1}")
-        last_end = position + len(before)
-        delta += len(after) - len(before)
-        removed.extend(before)
-    if not changed:
-        raise ValueError("diff contains no added or removed lines")
-    if deleting and removed != source:
-        raise ValueError("a deletion diff must include the whole file")
+            target = root
+            for part in Path(file).parts:
+                target /= part
+                if target.is_symlink():
+                    raise ValueError("Symlink: comparison unavailable")
+            right = source_text(source_path(root, file)) if target.exists() else None
+            if right is not None and "\0" in right:
+                raise ValueError("Binary file: comparison unavailable")
+        if left is None and right is None:
+            raise ValueError("File is absent from both compared versions")
+        return left, right
+    return versions
 
 
 PUNCT = set('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~')
@@ -476,34 +457,35 @@ def check_markdown_links(text, root, where, errors):
 
 
 def validate(walk, root):
+    source_text.cache_clear()
     errors = schema_errors(walk)
     if errors:
         return errors
+    versions = None
+    comparison_failed = False
+    if "compare" in walk:
+        try:
+            versions = comparison_sources(root, walk["compare"])
+        except (OSError, ValueError) as error:
+            errors.append(f"Comparison unavailable (walk structure is valid): {error}")
+            comparison_failed = True
     for step in walk["steps"]:
         where = f"Step {step['id']!r}"
-        anchors = [(where, step)]
-        for index, ref in enumerate(step.get("refs", [])):
-            label = repr(ref["label"]) if ref.get("label") else str(index + 1)
-            anchors.append((f"{where}, ref {label}", ref))
-        for location, anchor in anchors:
-            if "file" not in anchor:
+        for index, anchor in enumerate(step["places"]):
+            location = f"{where}, place {index + 1}"
+            if comparison_failed:
                 continue
             try:
-                text = source_text(source_path(root, anchor["file"]))
+                texts = versions(anchor["file"]) if versions else (source_text(source_path(root, anchor["file"])),)
                 if "quote" in anchor:
-                    count = quote_count(text, anchor["quote"])
-                    if count != 1:
-                        errors.append(f"{location}: quote occurs {count} times in {anchor['file']}")
+                    counts = [quote_count(text, anchor["quote"]) if text is not None else 0 for text in texts]
+                    if max(counts) > 1 or 1 not in counts:
+                        errors.append(f"{location}: quote must be unique in at least one version and unambiguous in both; occurrences {counts} in {anchor['file']}")
             except (OSError, ValueError) as error:
                 errors.append(f"{location}: {error}")
         check_markdown_links(step["body"], root, where, errors)
         if "details" in step:
             check_markdown_links(step["details"], root, where, errors)
-        if "diff" in step:
-            try:
-                check_diff(step, root)
-            except (OSError, ValueError) as error:
-                errors.append(f"{where}, diff: {error}")
     return errors
 
 
