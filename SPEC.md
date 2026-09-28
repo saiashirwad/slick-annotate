@@ -95,6 +95,10 @@ A walk can explain, propose, or mix the two: a refactor usually needs a few step
 - Copy and Clear are titled "Tandem session" rather than just "Session" under the Tandem category, because the Comments panel they sit in also lists other extensions' comments.
 - `.tandem/session.json` is the only source of truth. Threads are rebuilt from it when the workspace opens.
 
+## Agent skill
+
+The companion agent skill lives in [`skills/tandem/`](./skills/tandem/SKILL.md). It covers walk authoring, proposals, review and annotation interpretation, revision, and reader controls. Its bundled references let agents use it in other projects without this repository. Installing it is a separate copy into the agent's skills directory; the extension does not install it automatically.
+
 ## Later
 
 - **The agent bridge** — how an agent hands over a walk and learns a review was submitted (MCP or just the files). Being planned on the [wayfinder map](https://github.com/saiashirwad/tandem/issues/1).

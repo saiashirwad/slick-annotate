@@ -1,0 +1,23 @@
+{
+  "skill_name": "tandem",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Use Tandem to explain how this extension keeps my review when the agent rewrites a walk. Include a diagram and links to the related code. I want to understand the behavior, not change it.",
+      "expected_output": "A valid .tandem/walk.json with a focused explanation, exact unique source quotes, named refs (not bare paths) with quotes where a step touches more than one place, a Mermaid diagram, and no proposals or source edits. Explains title/ID identity and the four approval snapshot fields accurately.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Propose a Tandem change so approvals also become stale when a proposal's target file changes. Show me the exact intended edits in the walk before implementing anything.",
+      "expected_output": "A valid walk with context and reviewable proposal diffs covering the relevant approval storage and comparison code, plus compatibility implications. Every navigation anchor resolves. Source files remain unchanged; handoff explains how to review.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I submitted my Tandem review. Read it and my annotations. Answer the questions and revise the walk to address my responses, keeping the proposals I already approved intact. Some code has moved since I annotated it.",
+      "expected_output": "Uses current walk and review plus session input; checks title, IDs and snapshot equality; accounts for explanatory responses and historical snippets; preserves continuing IDs/title and unchanged proposals; treats missing approvals as unresolved rather than rejected; leaves reader-owned JSON and source code unchanged. Requires a seeded walk/review/session fixture before execution.",
+      "files": []
+    }
+  ]
+}

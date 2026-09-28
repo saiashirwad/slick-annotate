@@ -54,6 +54,12 @@ Your review survives reloads. When the agent revises a walk, responses follow th
 
 Tandem works through workspace files and copied text. The extension needs no agent account or API key. See [Writing walks](./WALKS.md) for the format and instructions for agents.
 
+### Agent skill
+
+The companion [Tandem skill](./skills/tandem/SKILL.md) teaches agents to write explanations and proposals, interpret reviews and annotations, and revise walks while preserving the reader's place. Copy the entire `skills/tandem/` folder into your agent's skills directory, including its `references/` folder. For example, Claude Code project skills live in `.claude/skills/tandem/`.
+
+Then ask: “Use Tandem to explain the request path,” “Propose this refactor as a Tandem walk,” or “Read my Tandem review and address each response.”
+
 ## Commands
 
 Commands are available in the command palette under **Tandem**.

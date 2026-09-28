@@ -4,7 +4,7 @@
 - Give the walk a `title` and an ordered list of `steps`.
 - Each step needs a unique `id`, a `title` and a Markdown `body`. Use `details` for a longer explanation behind **Show more**.
 - Add a `file` and a `quote` to highlight code. Paths are relative to the workspace root; a quote must appear exactly once in its file.
-- Use `refs` to point to other code worth reading alongside the step.
+- Use `refs` for other code the same step touches. Give each a `label` that names it and a `quote`, so the link opens that spot instead of showing a path. One step can have several.
 - See the [JSON schema](./schemas/walk.schema.json) for the full format.
 
 ```json
