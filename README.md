@@ -56,9 +56,11 @@ Tandem works through workspace files and copied text. The extension needs no age
 
 ### Agent skill
 
-The companion [Tandem skill](./skills/tandem/SKILL.md) teaches agents to write explanations and proposals, interpret reviews and annotations, and revise walks while preserving the reader's place. Copy the entire `skills/tandem/` folder into your agent's skills directory, including its `references/` folder. For example, Claude Code project skills live in `.claude/skills/tandem/`.
+The companion [Tandem skill](./skills/tandem/SKILL.md) teaches agents to write explanations and proposals, interpret reviews and annotations, and revise walks while preserving the reader's place. Copy the entire `skills/tandem/` folder into your agent's skills directory, including `references/` and `scripts/`. For example, Claude Code project skills live in `.claude/skills/tandem/`.
 
 Then ask: “Use Tandem to explain the request path,” “Propose this refactor as a Tandem walk,” or “Read my Tandem review and address each response.”
+
+The skill includes a read-only [authoring validator](./skills/tandem/references/walk-format.md#validation) for the walk format, source anchors, and proposed diffs. It requires Python 3.9+ and no extra packages.
 
 ## Commands
 

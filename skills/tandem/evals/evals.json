@@ -4,19 +4,31 @@
     {
       "id": 1,
       "prompt": "Use Tandem to explain how this extension keeps my review when the agent rewrites a walk. Include a diagram and links to the related code. I want to understand the behavior, not change it.",
-      "expected_output": "A valid .tandem/walk.json with a focused explanation, exact unique source quotes, named refs (not bare paths) with quotes where a step touches more than one place, a Mermaid diagram, and no proposals or source edits. Explains title/ID identity and the four approval snapshot fields accurately.",
+      "expected_output": "A valid .tandem/walk.json with a focused explanation, exact unique source quotes, and a Mermaid diagram. Names in the prose that point at existing code are Markdown links (a code span as the text, a unique quote in the destination), not bare code spans. Refs are named phrases for places the sentence does not already name. No proposals or source edits. Explains title/ID identity and the four approval snapshot fields accurately.",
       "files": []
     },
     {
       "id": 2,
       "prompt": "Propose a Tandem change so approvals also become stale when a proposal's target file changes. Show me the exact intended edits in the walk before implementing anything.",
-      "expected_output": "A valid walk with context and reviewable proposal diffs covering the relevant approval storage and comparison code, plus compatibility implications. Every navigation anchor resolves. Source files remain unchanged; handoff explains how to review.",
+      "expected_output": "A valid walk with context and reviewable proposal diffs covering the relevant approval storage and comparison code, plus compatibility implications. Every navigation anchor resolves, including Markdown links in the prose. Source files remain unchanged; handoff explains how to review.",
       "files": []
     },
     {
       "id": 3,
       "prompt": "I submitted my Tandem review. Read it and my annotations. Answer the questions and revise the walk to address my responses, keeping the proposals I already approved intact. Some code has moved since I annotated it.",
       "expected_output": "Uses current walk and review plus session input; checks title, IDs and snapshot equality; accounts for explanatory responses and historical snippets; preserves continuing IDs/title and unchanged proposals; treats missing approvals as unresolved rather than rejected; leaves reader-owned JSON and source code unchanged. Requires a seeded walk/review/session fixture before execution.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Use Tandem to propose moving walk validation into a dedicated module. Show me the responsibility boundary and affected callers so I can decide whether the split makes sense. We haven't agreed on the exact implementation yet.",
+      "expected_output": "A source-linked architectural proposal with context, concrete scope and tradeoff. Keeps one coordinated decision together across files; exact implementation diffs are optional. A proposed new module is named in prose and is not used as a nonexistent source anchor or code link. Existing names in the prose are Markdown links. Runs the bundled validator. Does not introduce new schema fields or edit source files.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Write a Tandem proposal to improve the error when a source quote matches several places. Show one exact edit in walk.ts and explain the related documentation updates as part of the same proposal. Validate the walk before handing it over.",
+      "expected_output": "One reviewable decision with a single-file exact diff, explicit prose scope for the companion documentation changes, and named source refs. Existing names in the prose are Markdown links. Uses supported diff syntax and the bundled validator; does not split steps merely to follow file boundaries or imply the displayed diff covers all edits. Source remains unchanged.",
       "files": []
     }
   ]

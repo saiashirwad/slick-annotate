@@ -44,7 +44,7 @@ A walk is written by a coding agent to `.tandem/walk.json`: a title and an order
 - At most one step is **focused**: its code opens and its whole lines are highlighted, and it has a bar down its left edge, like a focused notebook cell. Clicking any step that isn't focused focuses it (opening it if closed), as do clicking the focused step's file name (a button, so it works from the keyboard too) and Alt+] / Alt+[. Clicking in the focused step's text does nothing, so reading never pulls the editor back. Collapsing the focused step unfocuses it. Keyboard focus stays where it was. The focused step stays in place on screen, and the document only scrolls if it doesn't fit.
 - A quote must appear exactly once in its file. There are no line numbers, so edits elsewhere never move a step. If the quote isn't found, or appears more than once, the file opens with nothing highlighted and the status bar says which. Editing the file so the quote is found again brings the highlight back.
 - An open step shows its body; **Show more** unfolds its details.
-- Text can link to code: a Markdown link to `path/to/file` opens the file, and `path/to/file#quoted code` also selects the quote (again only if it occurs exactly once). A step's `refs` (`file`, optional `quote` and `label`) are the same links, shown as small chips under its body: other places worth seeing alongside the step's own code. Links to code never change the focused step.
+- Text can link to code: a Markdown link to `path/to/file` opens the file, and `path/to/file#quoted code` also selects the quote (again only if it occurs exactly once). A code span inside that link stays a chip. A step's `refs` (`file`, optional `quote` and `label`) are the same links, shown under its body: other places worth seeing alongside the step's own code. Links to code never change the focused step.
 - Which step is focused and which are open are remembered for the walk's title, by step id. An agent can rewrite its walk and you keep your place; a walk with a new title starts at step 1 with the rest closed. **Unfocus step** removes the highlight. **Clear walk** deletes the walk and its review.
 - The highlight colour is its own theme colour, `tandem.walkHighlight`, so it can't be mistaken for search matches.
 
@@ -98,6 +98,8 @@ A walk can explain, propose, or mix the two: a refactor usually needs a few step
 ## Agent skill
 
 The companion agent skill lives in [`skills/tandem/`](./skills/tandem/SKILL.md). It covers walk authoring, proposals, review and annotation interpretation, revision, and reader controls. Its bundled references let agents use it in other projects without this repository. Installing it is a separate copy into the agent's skills directory; the extension does not install it automatically.
+
+The skill treats each proposal as one reviewable decision, which may span files. Architectural proposals can use prose and refs; a diff specifies an exact single-file edit and may cover a stated part of a larger proposal. These use the existing proposal and approval fields. The bundled Python 3.9+ validator checks schema, source anchors, Markdown links, and diff before-text; numeric hunk counts are checked when present. It is read-only, uses the standard library, and applies stricter authoring checks than the extension's lenient diff display parser.
 
 ## Later
 

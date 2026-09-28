@@ -27,22 +27,27 @@
       "body": "What you intend to change here, and why.",
       "file": "src/auth.ts",
       "quote": "function refresh(",
-      "diff": "-function refresh(token) {\n+// moved to Session.refresh\n"
+      "refs": [{ "label": "the destination", "file": "src/session.ts", "quote": "export class Session" }]
     }
   ]
 }
 ```
 
 - Replace the example paths and quotes with code from the workspace.
-- Link to a file with `[router](src/router.ts)`, or select code with `[route](<src/router.ts#export function route(>)`.
+- A name in the prose that points at existing code is a link, not a bare code span: `[`submitReview`](<src/submit.ts#export async function submitReview(>)`. The text is the name; the quote is a unique one-line slice and need not contain the name. A name that is not in the source yet stays a code span. Escape `<` and `>` in the quote as `\<` and `\>`. A link with no quote, `[router](src/router.ts)`, only opens the file.
 - Mermaid diagrams work in both `body` and `details`.
 
 ## Proposing changes
 
 - Mark a step `"proposal": true` when it's a change you intend to make. The reader can approve it. Explain the context in ordinary steps first, so each proposal makes sense.
-- A proposal can carry an optional `diff` of the intended change, in unified diff format. File headers are optional, and `@@` lines can say where you are. Include a few lines of context. Use it where prose alone would be ambiguous.
+- Make each proposal one independently reviewable decision. It may span several files; use refs for the supporting code. Describe an architectural change's responsibilities, affected callers, and tradeoff in prose.
+- Include an optional `diff` when the exact replacement matters. It previews one file; if it covers only part of the proposal, say so. File and hunk headers are optional, and unsigned lines are context. Both sides are built from the diff alone; Tandem does not apply it or check hunk counts. Use real context and actual replacement code.
+- A proposed new file has no source anchor. Name its path in prose; when proposing its exact contents, use `--- /dev/null` and `+++ b/path` headers in the creation diff.
 - The reader can write a response on any step, and submits the whole review when done. It's pasted to you, and it's also in `.tandem/review.json`: per step `id`, a `response` if they wrote one and an `approved` copy of the proposal if they approved it.
 - An unapproved proposal has no fixed meaning: read the response. Don't make a change the reader hasn't approved.
+- Approval covers the stated proposal; unspecified implementation details remain open. Wait for the user's request to implement.
+
+The [companion skill](./skills/tandem/SKILL.md) includes a Python 3.9+ authoring validator. From this repository, run `python3 skills/tandem/scripts/validate_walk.py /path/to/workspace`. It checks anchors and diffs against current source without changing files; see its [validation contract](./skills/tandem/references/walk-format.md#validation).
 
 ## Revising
 

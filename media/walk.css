@@ -437,10 +437,19 @@ a:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
 }
 
+/* A linked name stays a chip. Bare code is not a link. */
+a:has(> code:only-child) {
+  text-decoration: none;
+}
+
 a code {
-  padding: 0;
   color: var(--vscode-textLink-foreground);
-  background: none;
+}
+
+a:hover code,
+a:focus-visible code {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 blockquote {
