@@ -11,7 +11,6 @@ import re
 import sys
 import os
 import subprocess
-import tempfile
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import unquote
@@ -115,10 +114,10 @@ def quote_count(text, quote):
     return count
 
 
-def git(root, *args):
+def git(root, *args, input=None):
     try:
         result = subprocess.run(
-            ["git", *args], cwd=root, capture_output=True, timeout=30,
+            ["git", *args], cwd=root, capture_output=True, timeout=30, input=input,
             env={**os.environ, "LC_ALL": "C", "GIT_OPTIONAL_LOCKS": "0", "GIT_LITERAL_PATHSPECS": "1"},
         )
     except (OSError, subprocess.TimeoutExpired) as error:
@@ -126,45 +125,6 @@ def git(root, *args):
     if result.returncode and not ("--no-index" in args and result.returncode == 1):
         raise ValueError(f"Git {args[0]} failed: {result.stderr.decode(errors='replace').strip()}")
     return result.stdout
-
-
-def patch_path(path):
-    if not re.search(r'[\x00-\x1f\x7f"\\]', path):
-        return path
-    escapes = dict(zip('\a\b\t\n\v\f\r"\\', ['\\a', '\\b', '\\t', '\\n', '\\v', '\\f', '\\r', '\\"', '\\\\']))
-    return '"' + re.sub(r'[\x00-\x1f\x7f"\\]', lambda m: escapes.get(m[0], f"\\{ord(m[0]):03o}"), path) + '"'
-
-
-def parse_changes(output, snapshot=False):
-    records = output.decode(errors="replace").split("\0")
-    changes, headers, seen = {}, {}, set()
-    index = 0
-    unprefix = lambda path: re.sub(r"^(before|after)/", "", path) if snapshot else path
-    while records[index].startswith(":"):
-        status = records[index].split(" ")[4]
-        old = records[index + 1]
-        index += 2
-        new = old
-        if status.startswith(("R", "C")):
-            new = records[index]
-            index += 1
-        elif snapshot and status == "M":
-            new = re.sub(r"^before/", "after/", old)
-        file = unprefix(new)
-        changes[file] = {"old": unprefix(old), "reason": None}
-        if status[0] not in "AMDRC":
-            changes[file]["reason"] = f"Unsupported Git file change: {status}"
-        headers[f"{patch_path('a/' + old)} {patch_path('b/' + new)}"] = file
-    for patch in re.split(r"^diff --git ", "\0".join(records[index:]).lstrip("\0"), flags=re.M)[1:]:
-        file = headers.get(patch.split("\n", 1)[0])
-        if file is None:
-            continue
-        seen.add(file)
-        if re.search(r"^Binary files |^GIT binary patch", patch, re.M):
-            changes[file]["reason"] = "Binary file: comparison unavailable"
-    for file in changes.keys() - seen:
-        changes[file]["reason"] = "Cannot find the Git patch for this file"
-    return changes
 
 
 def comparison_sources(root, compare, files):
@@ -177,10 +137,11 @@ def comparison_sources(root, compare, files):
         raise ValueError("Comparison needs exactly one merge-base")
     base = bases[0]
     explicit = "head" in compare
-    def tree(commit):
-        entries = git(repo, "ls-tree", "-rz", "--full-tree", commit).decode().split("\0")
+    selected = {(root / file).relative_to(repo).as_posix() for file in files}
+    def tree(commit, paths=()):
+        entries = git(repo, "ls-tree", "-rz", "--full-tree", commit, "--", *paths).decode().split("\0")
         return {entry.split("\t", 1)[1]: entry.split(" ", 1)[0] for entry in entries if entry}
-    before, after = tree(base), tree(head) if explicit else None
+    before, after = tree(base, selected), tree(head, selected) if explicit else None
     reads = {}
     def cached(key, read):
         if key not in reads:
@@ -220,52 +181,62 @@ def comparison_sources(root, compare, files):
             return text
         return cached((None, file), read)
 
-    options = ["--raw", "-z", "--patch", "--no-abbrev", "--no-color", "--unified=0", "--inter-hunk-context=0", "--find-renames", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/"]
-    selected = {(root / file).relative_to(repo).as_posix() for file in files}
-    for file in before:
-        if explicit:
-            if file not in after:
-                selected.add(file)
-        else:
-            try:
-                (repo / file).lstat()
-            except FileNotFoundError:
-                selected.add(file)
-            except OSError:
-                pass
-    failures = {}
-    with tempfile.TemporaryDirectory(prefix="tandem-compare-") as temporary:
-        temporary = Path(temporary)
-        for side in ("before", "after"):
-            (temporary / side).mkdir()
-        for file in sorted(selected):
-            try:
-                versions = [("before", committed(base, file)), ("after", committed(head, file) if explicit else working(file))]
-            except (OSError, ValueError) as error:
-                failures[file] = {"old": file, "reason": str(error)}
-                continue
-            for side, text in versions:
+    destinations = []
+    for file in selected - before.keys():
+        try:
+            if (committed(head, file) if explicit else working(file)) is not None:
+                destinations.append(file)
+        except (OSError, ValueError):
+            pass
+    sources = []
+    if destinations:
+        before.update(tree(base))
+        head_tree = tree(head) if explicit else None
+        for file in before:
+            if explicit:
+                if file not in head_tree:
+                    sources.append(file)
+            else:
                 try:
-                    if text is not None:
-                        path = temporary / side / file
-                        path.parent.mkdir(parents=True, exist_ok=True)
-                        with path.open("w", encoding="utf-8", newline="") as output:
-                            output.write(text)
-                except (OSError, ValueError) as error:
-                    failures[file] = {"old": file, "reason": str(error)}
-        changes = parse_changes(git(temporary, "-c", "core.quotePath=false", "diff", "--no-index", *options, "--", "before", "after"), snapshot=True)
-    changes.update(failures)
+                    (repo / file).lstat()
+                except FileNotFoundError:
+                    sources.append(file)
+                except OSError:
+                    pass
+
+    def rename_source(file, right):
+        best, old, ambiguous = 0.5, file, False
+        lines = lambda text: len(text.split("\n")) - int(text.endswith("\n")) if text else 0
+        for source in sources:
+            try:
+                left = committed(base, source)
+            except (OSError, ValueError):
+                continue
+            if left == right:
+                score = 1
+            else:
+                options = ["--numstat", "--text", "--no-color", "--no-ext-diff", "--no-textconv"]
+                output = git(repo, "diff", *options, f"{base}:{source}", f"{head}:{file}", "--") if explicit else git(repo, "diff", "--no-index", *options, "--", "-", str(repo / file), input=git(repo, "show", f"{base}:{source}"))
+                removed = int(output.split(b"\t", 2)[1])
+                score = (lines(left) - removed) / max(lines(left), lines(right), 1)
+            if score < best:
+                continue
+            if score == best and old != file:
+                ambiguous = True
+                continue
+            best, old, ambiguous = score, source, False
+        if ambiguous:
+            raise ValueError("Rename source is ambiguous")
+        return old
 
     @lru_cache(maxsize=None)
     def versions(file):
         if "\\" in file:
             raise ValueError(f"use '/' separators in {file!r}")
         path = (root / file).relative_to(repo).as_posix()
-        change = changes.get(path, {"old": path, "reason": None})
-        if change["reason"]:
-            raise ValueError(change["reason"])
-        left = committed(base, change["old"])
         right = committed(head, path) if explicit else working(path)
+        old = rename_source(path, right) if path in destinations and sources else path
+        left = committed(base, old)
         if left is None and right is None:
             raise ValueError("File is absent from both compared versions")
         return left, right
@@ -539,9 +510,10 @@ def validate(walk, root):
         return errors
     versions = None
     comparison_failed = False
-    if "compare" in walk:
+    files = {place["file"] for step in walk["steps"] for place in step["places"]}
+    if "compare" in walk and files:
         try:
-            versions = comparison_sources(root, walk["compare"], {place["file"] for step in walk["steps"] for place in step["places"]})
+            versions = comparison_sources(root, walk["compare"], files)
         except (OSError, ValueError) as error:
             errors.append(f"Comparison unavailable (walk structure is valid): {error}")
             comparison_failed = True

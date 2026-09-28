@@ -12,7 +12,7 @@ This option compares the merge-base of `main` and `feature` on the left with the
 
 Omit `head` to find the merge-base of base and HEAD, then compare it against the real working tree, including uncommitted tracked edits and untracked files. Navigation and the diff's right side use disk. Counts describe saved disk content at walk load, not unsaved editor buffers. A supplied head never depends on which branch is checked out.
 
-Preparation compares temporary copies of loaded endpoint content, including missing base paths for rename discovery; unreadable files are excluded individually. Unstaged renames and files removed only from the index therefore use their real endpoints. The copies are removed afterward; no workspace or index is changed.
+Preparation reads committed content into memory and uses native Git diffs, without temporary files or index changes. Only readable requested destinations absent from base trigger rename discovery: a unique best missing-base source must retain at least half its lines relative to the larger file, as measured by Git's change counts. Equal best matches are unavailable. This also works for unstaged renames; ordinary existing-file walks do not scan unrelated paths.
 
 Without a quote, +/− counts cover the file. With a quote, take the union of zero-context hunks whose nonempty old or new line ranges intersect the quote's unique whole-line range on that side. Count each selected hunk once. Zero-length sides intersect nothing; no intersection means +0/−0, never the nearest hunk. Old-only quotes are valid. An ambiguous quote on either side or no match on both makes scoped counts unavailable, while usable full-file endpoints can still open.
 

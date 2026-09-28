@@ -5,15 +5,18 @@ import { promisify } from 'node:util'
 
 const exec = promisify(execFile)
 
-export async function git(root: string, args: string[]) {
+export async function git(root: string, args: string[], input?: Buffer) {
   try {
-    const { stdout } = await exec('git', args, {
+    const running = exec('git', args, {
       cwd: root,
       encoding: 'buffer',
       maxBuffer: 64 * 1024 * 1024,
       timeout: 30000,
       env: { ...process.env, LC_ALL: 'C', GIT_OPTIONAL_LOCKS: '0', GIT_LITERAL_PATHSPECS: '1' },
     })
+
+    running.child.stdin?.end(input)
+    const { stdout } = await running
 
     return stdout
   } catch (cause) {
@@ -45,8 +48,8 @@ export async function comparisonEndpoints(root: string, base: string, head?: str
   return { repo, base: bases[0], head: head === undefined ? undefined : headCommit }
 }
 
-export async function treeFiles(repo: string, revision: string) {
-  const tree = await git(repo, ['ls-tree', '-rz', '--full-tree', revision])
+export async function treeFiles(repo: string, revision: string, paths: string[] = []) {
+  const tree = await git(repo, ['ls-tree', '-rz', '--full-tree', revision, '--', ...paths])
 
   return new Map(
     tree

@@ -1,7 +1,8 @@
-import { lstat, readFile, realpath, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
-import { dirname, join, relative, isAbsolute } from 'node:path'
-import { tmpdir } from 'node:os'
+import { lstat, readFile, realpath } from 'node:fs/promises'
+import { join, relative } from 'node:path'
+import * as v from 'valibot'
 import { comparisonEndpoints, git, revisionText, textContent, treeFiles } from './git.ts'
+import { FilePath } from './validation.ts'
 import { errorMessage } from './errors.ts'
 import type { LineRange, Located } from './locate.ts'
 import type { Walk } from './walk-data.ts'
@@ -18,31 +19,12 @@ export type ComparedFile = { before: Version; after: Version; hunks: Hunk[] }
 export type FileComparison =
   { file: ComparedFile; reason?: never; target?: never } | { file?: never; reason: string; target?: Version }
 
-type FileChange = { oldFile: string; hunks: Hunk[]; binary: boolean; reason?: string }
-
 type ReadVersion = { version: Version; reason?: never } | { version?: never; reason: string }
-
-const diffOptions = [
-  '--raw',
-  '-z',
-  '--patch',
-  '--no-abbrev',
-  '--no-color',
-  '--no-ext-diff',
-  '--no-textconv',
-  '--unified=0',
-  '--inter-hunk-context=0',
-  '--find-renames',
-  '--src-prefix=a/',
-  '--dst-prefix=b/',
-]
 
 export async function plainDiskText(root: string, file: string) {
   const path = await realpath(join(root, file))
-  const inside = relative(await realpath(root), path)
 
-  if (inside === '..' || inside.startsWith('../') || isAbsolute(inside))
-    throw new Error('Place resolves outside the workspace')
+  if (!v.is(FilePath, relative(await realpath(root), path))) throw new Error('Place resolves outside the workspace')
 
   return textContent(await readFile(path))
 }
@@ -69,96 +51,15 @@ export async function diskText(root: string, file: string): Promise<string | und
   return textContent(await readFile(path))
 }
 
-// With core.quotePath=false, only control characters, quotes and backslashes are escaped.
-function patchPath(path: string) {
-  const needsEscape = (c: string) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127 || c === '"' || c === '\\'
-
-  if (![...path].some(needsEscape)) return path
-
-  const escapes = new Map([
-    ['\x07', '\\a'],
-    ['\b', '\\b'],
-    ['\t', '\\t'],
-    ['\n', '\\n'],
-    ['\v', '\\v'],
-    ['\f', '\\f'],
-    ['\r', '\\r'],
-    ['"', '\\"'],
-    ['\\', '\\\\'],
-  ])
-
-  return (
-    '"' +
-    [...path]
-      .map((c) => (needsEscape(c) ? (escapes.get(c) ?? `\\${c.charCodeAt(0).toString(8).padStart(3, '0')}`) : c))
-      .join('') +
-    '"'
-  )
-}
-
-export function parseChanges(output: string, snapshot = false) {
-  const changes = new Map<string, FileChange>()
-  const headers = new Map<string, FileChange>()
-  const seen = new Set<FileChange>()
-  const records = output.split('\0')
-  let index = 0
-
-  while (records[index]?.startsWith(':')) {
-    const metadata = records[index++].split(' ')
-    const status = metadata[4]
-    const oldPath = records[index++]
-
-    const newPath = /^[RC]/.test(status)
-      ? records[index++]
-      : snapshot && status === 'M'
-        ? oldPath.replace(/^before\//, 'after/')
-        : oldPath
-
-    const unprefix = (path: string) => (snapshot ? path.replace(/^(before|after)\//, '') : path)
-    const change: FileChange = { oldFile: unprefix(oldPath), hunks: [], binary: false }
-
-    if (!/^[AMDRC]/.test(status)) change.reason = `Unsupported Git file change: ${status}`
-    changes.set(unprefix(newPath), change)
-    headers.set(`${patchPath(`a/${oldPath}`)} ${patchPath(`b/${newPath}`)}`, change)
-  }
-
-  const patches = records
-    .slice(index)
-    .join('\0')
-    .replace(/^\0+/, '')
-    .split(/^diff --git /m)
-    .slice(1)
-
-  patches.forEach((patch) => {
-    const change = headers.get(patch.slice(0, patch.indexOf('\n')))
-
-    if (!change) return
-    seen.add(change)
-    change.binary ||= /^Binary files |^GIT binary patch/m.test(patch)
-    change.hunks.push(
-      ...[...patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)].map((match) => ({
-        oldStart: Number(match[1]),
-        oldCount: Number(match[2] ?? 1),
-        newStart: Number(match[3]),
-        newCount: Number(match[4] ?? 1),
-      })),
-    )
-  })
-
-  for (const change of changes.values()) {
-    if (!seen.has(change)) change.reason = 'Cannot find the Git patch for this file'
-  }
-
-  return changes
-}
-
 export async function prepareComparison(root: string, compare: NonNullable<Walk['compare']>, files: string[]) {
+  if (!files.length) return new Map<string, FileComparison>()
   root = await realpath(root)
   const { repo, base, head } = await comparisonEndpoints(root, compare.base, compare.head)
+  const paths = [...new Set(files.map((file) => relative(repo, join(root, file)).split('\\').join('/')))]
 
   const [beforeModes, afterModes] = await Promise.all([
-    treeFiles(repo, base),
-    head ? treeFiles(repo, head) : Promise.resolve(undefined),
+    treeFiles(repo, base, paths),
+    head ? treeFiles(repo, head, paths) : Promise.resolve(undefined),
   ])
 
   const contents = new Map<string, Promise<ReadVersion>>()
@@ -180,8 +81,11 @@ export async function prepareComparison(root: string, compare: NonNullable<Walk[
   }
 
   const disk = new Map<string, Promise<ReadVersion>>()
+  const before = (file: string) => committed(base, file, beforeModes.get(file))
 
-  const working = (file: string) => {
+  const after = (file: string) => {
+    if (head) return committed(head, file, afterModes?.get(file))
+
     if (!disk.has(file))
       disk.set(
         file,
@@ -191,63 +95,105 @@ export async function prepareComparison(root: string, compare: NonNullable<Walk[
     return disk.get(file)!
   }
 
-  const paths = [...new Set(files.map((file) => relative(repo, join(root, file)).split('\\').join('/')))]
-  let changes: Map<string, FileChange>
-  let diffProblem: string | undefined
+  const destinations: string[] = []
 
-  try {
-    changes = await snapshotChanges(
-      repo,
-      beforeModes,
-      afterModes,
-      paths,
-      (file) => committed(base, file, beforeModes.get(file)),
-      (file) => (head ? committed(head, file, afterModes?.get(file)) : working(file)),
-    )
-  } catch (error) {
-    changes = new Map()
-    diffProblem = errorMessage(error)
+  for (const file of paths) {
+    if (!beforeModes.has(file) && (await after(file)).version?.exists) destinations.push(file)
   }
 
-  const entries = await Promise.all(
-    [...new Set(files)].map(async (file): Promise<[string, FileComparison]> => {
-      try {
-        const path = relative(repo, join(root, file)).split('\\').join('/')
-        const change = changes.get(path)
-        const oldFile = change?.oldFile ?? path
-        const oldMode = beforeModes.get(oldFile)
-        const newMode = afterModes?.get(path)
+  const sources: string[] = []
+  let renameProblem: string | undefined
 
-        const [left, right] = await Promise.all([
-          committed(base, oldFile, oldMode),
-          head ? committed(head, path, newMode) : working(path),
-        ])
+  // Existing-file walks do not inspect unrelated paths for possible renames.
+  if (destinations.length) {
+    try {
+      const baseTree = await treeFiles(repo, base)
+      const headTree = head ? await treeFiles(repo, head) : undefined
 
-        const target = right.version?.exists ? right.version : right.version ? left.version : undefined
-        const reason = left.reason ?? right.reason ?? change?.reason ?? (change?.binary ? 'Binary file' : diffProblem)
+      for (const [file, mode] of baseTree) {
+        beforeModes.set(file, mode)
 
-        if (reason || !left.version || !right.version)
-          return [file, { reason: reason ?? 'Comparison unavailable', target }]
-
-        if (!left.version.exists && !right.version.exists) throw new Error('File is absent from both versions')
-
-        return [
-          file,
-          {
-            file: {
-              before: left.version,
-              after: right.version,
-              hunks: change?.hunks ?? [],
-            },
-          },
-        ]
-      } catch (error) {
-        return [file, { reason: errorMessage(error) }]
+        if (headTree) {
+          if (!headTree.has(file)) sources.push(file)
+        } else {
+          try {
+            await lstat(join(repo, file))
+          } catch (error) {
+            if (error instanceof Error && 'code' in error && error.code === 'ENOENT') sources.push(file)
+          }
+        }
       }
-    }),
-  )
+    } catch (error) {
+      renameProblem = errorMessage(error)
+    }
+  }
 
-  return new Map(entries)
+  return new Map(
+    await Promise.all(
+      [...new Set(files)].map(async (file): Promise<[string, FileComparison]> => {
+        const path = relative(repo, join(root, file)).split('\\').join('/')
+        const right = await after(path)
+        let left = await before(path)
+        let target = right.version?.exists ? right.version : right.version ? left.version : undefined
+
+        try {
+          if (destinations.includes(path) && renameProblem) throw new Error(renameProblem)
+
+          if (!beforeModes.has(path) && right.version?.exists && sources.length) {
+            let best = 0.5
+            let ambiguous = false
+
+            for (const source of sources) {
+              const candidate = await before(source)
+
+              if (!candidate.version?.exists) continue
+              const hunks = await diffVersions(repo, candidate.version, right.version)
+
+              const score =
+                candidate.version.text === right.version.text
+                  ? 1
+                  : (lineCount(candidate.version.text) - hunks.reduce((n, h) => n + h.oldCount, 0)) /
+                    Math.max(lineCount(candidate.version.text), lineCount(right.version.text), 1)
+
+              if (score < best) continue
+
+              if (score === best && left.version?.exists) {
+                ambiguous = true
+                continue
+              }
+
+              best = score
+              left = candidate
+              ambiguous = false
+            }
+
+            if (ambiguous) throw new Error('Rename source is ambiguous')
+          }
+
+          target = right.version?.exists ? right.version : right.version ? left.version : undefined
+          const reason = left.reason ?? right.reason
+
+          if (reason || !left.version || !right.version)
+            return [file, { reason: reason ?? 'Comparison unavailable', target }]
+
+          if (!left.version.exists && !right.version.exists) throw new Error('File is absent from both versions')
+
+          return [
+            file,
+            {
+              file: {
+                before: left.version,
+                after: right.version,
+                hunks: await diffVersions(repo, left.version, right.version),
+              },
+            },
+          ]
+        } catch (error) {
+          return [file, { reason: errorMessage(error), target }]
+        }
+      }),
+    ),
+  )
 }
 
 async function readVersion(endpoint: Endpoint, read: () => Promise<string | undefined>): Promise<ReadVersion> {
@@ -260,77 +206,44 @@ async function readVersion(endpoint: Endpoint, read: () => Promise<string | unde
   }
 }
 
-async function snapshotChanges(
-  repo: string,
-  modes: Map<string, string>,
-  headModes: Map<string, string> | undefined,
-  paths: string[],
-  before: (file: string) => Promise<ReadVersion>,
-  after: (file: string) => Promise<ReadVersion>,
-) {
-  const selected = new Set(paths)
+function lineCount(text: string) {
+  return text ? text.split('\n').length - Number(text.endsWith('\n')) : 0
+}
 
-  // Missing base paths are rename candidates, even when the destination was never staged.
-  for (const file of modes.keys()) {
-    if (headModes) {
-      if (!headModes.has(file)) selected.add(file)
-      continue
-    }
+async function diffVersions(repo: string, before: Version, after: Version): Promise<Hunk[]> {
+  if (before.text === after.text) return []
 
-    try {
-      await lstat(join(repo, file))
-    } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') selected.add(file)
-    }
-  }
+  if (!before.exists || !after.exists)
+    return [
+      {
+        oldStart: before.exists ? 1 : 0,
+        oldCount: lineCount(before.text),
+        newStart: after.exists ? 1 : 0,
+        newCount: lineCount(after.text),
+      },
+    ]
+  const left = before.endpoint
+  const right = after.endpoint
 
-  const temporary = await mkdtemp(join(tmpdir(), 'tandem-compare-'))
+  if ('disk' in left) throw new Error('Expected a committed base')
+  const options = ['--text', '--no-color', '--no-ext-diff', '--no-textconv', '--unified=0', '--inter-hunk-context=0']
 
-  try {
-    await Promise.all(['before', 'after'].map((side) => mkdir(join(temporary, side))))
-    const failures = new Map<string, FileChange>()
+  // Streaming the base also covers paths removed from the index but still present on disk.
+  const output =
+    'disk' in right
+      ? await git(
+          repo,
+          ['diff', '--no-index', ...options, '--', '-', right.disk],
+          await git(repo, ['show', `${left.revision}:${left.file}`]),
+        )
+      : await git(repo, ['diff', ...options, `${left.revision}:${left.file}`, `${right.revision}:${right.file}`, '--'])
 
-    for (const file of selected) {
-      const versions = await Promise.all([before(file), after(file)])
-      const reason = versions.find((result) => result.reason)?.reason
-
-      if (reason) {
-        failures.set(file, { oldFile: file, hunks: [], binary: false, reason })
-        continue
-      }
-
-      for (const [index, result] of versions.entries()) {
-        if (!result.version?.exists) continue
-
-        try {
-          const path = join(temporary, index === 0 ? 'before' : 'after', file)
-          await mkdir(dirname(path), { recursive: true })
-          await writeFile(path, result.version.text)
-        } catch (error) {
-          failures.set(file, { oldFile: file, hunks: [], binary: false, reason: errorMessage(error) })
-        }
-      }
-    }
-
-    const patch = await git(temporary, [
-      '-c',
-      'core.quotePath=false',
-      'diff',
-      '--no-index',
-      ...diffOptions,
-      '--',
-      'before',
-      'after',
-    ])
-
-    const changes = parseChanges(patch.toString(), true)
-
-    for (const [file, failure] of failures) changes.set(file, failure)
-
-    return changes
-  } finally {
-    await rm(temporary, { recursive: true, force: true })
-  }
+  return [...output.toString().matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)].map((match) => ({
+    oldStart: Number(match[1]),
+    oldCount: Number(match[2] ?? 1),
+    newStart: Number(match[3]),
+    newCount: Number(match[4] ?? 1),
+  }))
 }
 
 function intersects(start: number, count: number, range?: LineRange) {

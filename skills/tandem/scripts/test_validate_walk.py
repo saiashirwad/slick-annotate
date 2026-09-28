@@ -4,8 +4,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from validate_walk import comparison_sources, parse_changes, validate
+from validate_walk import comparison_sources, git, validate
 
 
 class ComparisonTests(unittest.TestCase):
@@ -45,8 +46,6 @@ class ComparisonTests(unittest.TestCase):
         (self.root / "regular").symlink_to("service.ts")
         self.put("service.ts", "changed service\nstable\n")
         self.commit()
-        raw = self.git("-c", "core.quotePath=false", "diff", "--raw", "-z", "--patch", "--unified=0", base, "HEAD", "--")
-        self.assertIsNone(parse_changes(raw.encode())["service.ts"]["reason"])
         for compare in ({"base": base}, {"base": base, "head": "HEAD"}):
             self.assertEqual(validate(self.walk([{"file": "service.ts"}], compare), self.root), [])
             errors = validate(self.walk([{"file": "service.ts"}, {"file": "link"}, {"file": "regular"}], compare), self.root)
@@ -103,6 +102,33 @@ class ComparisonTests(unittest.TestCase):
             walk = self.walk([])
             walk["steps"][0][field] = "legacy"
             self.assertIn("unknown field", validate(walk, self.root)[0])
+
+    def test_case_distinct_committed_paths_without_checkout(self):
+        self.commit()
+        def input_git(text, *args):
+            return subprocess.check_output(["git", *args], cwd=self.root, input=text.encode()).decode().strip()
+        def tree(upper, lower):
+            a = input_git(upper, "hash-object", "-w", "--stdin")
+            b = input_git(lower, "hash-object", "-w", "--stdin")
+            return input_git(f"100644 blob {a}\tThing.ts\n100644 blob {b}\tthing.ts\n", "mktree")
+        base = self.git("commit-tree", tree("old upper\n", "old lower\n"), "-p", "HEAD", "-m", "base")
+        head = self.git("commit-tree", tree("new upper\n", "new lower\n"), "-p", base, "-m", "head")
+        for names in (("Thing.ts", "thing.ts"), ("thing.ts", "Thing.ts")):
+            versions = comparison_sources(self.root, {"base": base, "head": head}, names)
+            self.assertEqual(versions("Thing.ts"), ("old upper\n", "new upper\n"))
+            self.assertEqual(versions("thing.ts"), ("old lower\n", "new lower\n"))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_existing_and_empty_places_do_not_scan_for_renames(self):
+        self.commit()
+        with patch("validate_walk.git", wraps=git) as calls:
+            self.assertEqual(validate(self.walk([{"file": "service.ts"}], {"base": "HEAD"}), self.root), [])
+            trees = [call.args for call in calls.call_args_list if call.args[1] == "ls-tree"]
+            self.assertEqual(len(trees), 1)
+            self.assertEqual(trees[0][-2:], ("--", "service.ts"))
+            calls.reset_mock()
+            self.assertEqual(validate(self.walk([], {"base": "missing"}), self.root), [])
+            calls.assert_not_called()
 
 
 if __name__ == "__main__":

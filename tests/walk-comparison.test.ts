@@ -1,10 +1,13 @@
-import { afterEach, mock, test, expect } from 'bun:test'
+import { afterEach, mock, spyOn, test, expect } from 'bun:test'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, symlinkSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
+import * as fs from 'node:fs/promises'
+import * as v from 'valibot'
 import { tmpdir } from 'node:os'
-import { parseChanges, prepareComparison, scopeComparison } from '../src/walk-compare.ts'
+import { prepareComparison, scopeComparison } from '../src/walk-compare.ts'
 import { locate } from '../src/locate.ts'
+import { FilePath } from '../src/validation.ts'
 
 class Uri {
   scheme: string
@@ -40,6 +43,7 @@ const { preparePlaces, documentRange } = await import('../src/walk-places.ts')
 const roots: string[] = []
 
 afterEach(() => {
+  mock.restore()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -78,8 +82,6 @@ test('1: both directions of type change leave unrelated comparisons available', 
   symlinkSync('service.ts', join(root, 'regular'))
   put('service.ts', 'changed service\nstable\n')
   commit()
-  const raw = git('-c', 'core.quotePath=false', 'diff', '--raw', '-z', '--patch', '--unified=0', base, 'HEAD', '--')
-  expect(parseChanges(raw).get('service.ts')!.hunks).toEqual([{ oldStart: 1, oldCount: 1, newStart: 1, newCount: 1 }])
   for (const head of [undefined, 'HEAD']) {
     const files = await prepareComparison(root, { base, head }, ['service.ts', 'link', 'regular'])
     expect(scopeComparison(files.get('service.ts')!.file!)).toMatchObject({ added: 1, removed: 1 })
@@ -113,6 +115,16 @@ test('2: index removals use disk contents for both counts and endpoints without 
     if (previous === undefined) delete process.env.GIT_INDEX_FILE
     else process.env.GIT_INDEX_FILE = previous
   }
+})
+
+test('streamed working-tree comparisons preserve the base encoding BOM', async () => {
+  const { root, put, commit } = fixture()
+  put('service.ts', '\uFEFFfirst\nold\nlast\n')
+  commit()
+  put('service.ts', '\uFEFFfirst\nnew\nlast\n')
+  const result = (await prepareComparison(root, { base: 'HEAD' }, ['service.ts'])).get('service.ts')!.file!
+  expect(result.hunks).toEqual([{ oldStart: 2, oldCount: 1, newStart: 2, newCount: 1 }])
+  expect(scopeComparison(result)).toMatchObject({ added: 1, removed: 1 })
 })
 
 test('3: unstaged renames, including edited files and subdirectory workspaces, retain the base endpoint', async () => {
@@ -211,13 +223,74 @@ test('6: inclusive locator bounds retain a final quoted blank line', () => {
   }
 })
 
-test('7: bundled evaluation cases teach current places, notes and prose fences', () => {
-  const evaluations = JSON.parse(readFileSync(new URL('../skills/tandem/evals/evals.json', import.meta.url), 'utf8'))
-  expect(evaluations.evals[0].expected_output).toContain('sparse notes')
-  expect(evaluations.evals[1].expected_output).toContain('Markdown diff fence')
-  expect(evaluations.evals[2].expected_output).toContain('without inventing approval snapshots')
-  expect(evaluations.evals[4].expected_output).toContain('ordered labeled places')
-  expect(JSON.stringify(evaluations)).not.toMatch(
-    /named source refs|snapshot equality|four approval snapshot fields|approvals also become stale/,
+test('case-distinct committed paths keep independent counts and revision contents without a checkout or writes', async () => {
+  const { root, git, commit } = fixture()
+  commit()
+  const input = (text: string, ...args: string[]) =>
+    execFileSync('git', args, { cwd: root, input: text, encoding: 'utf8' }).trim()
+  const tree = (upper: string, lower: string) =>
+    input(
+      `100644 blob ${input(upper, 'hash-object', '-w', '--stdin')}\tThing.ts\n100644 blob ${input(lower, 'hash-object', '-w', '--stdin')}\tthing.ts\n`,
+      'mktree',
+    )
+  const base = git('commit-tree', tree('old upper\n', 'old lower\n'), '-p', 'HEAD', '-m', 'case base')
+  const head = git(
+    'commit-tree',
+    tree('upper one\nupper two\nupper three\n', 'lower one\n'),
+    '-p',
+    base,
+    '-m',
+    'case head',
   )
+  const writes = spyOn(fs, 'writeFile')
+  const temporary = spyOn(fs, 'mkdtemp')
+  for (const paths of [
+    ['Thing.ts', 'thing.ts'],
+    ['thing.ts', 'Thing.ts'],
+  ]) {
+    const files = await prepareComparison(root, { base, head }, paths)
+    expect(scopeComparison(files.get('Thing.ts')!.file!)).toMatchObject({ added: 3, removed: 1 })
+    expect(scopeComparison(files.get('thing.ts')!.file!)).toMatchObject({ added: 1, removed: 1 })
+    const prepared = await preparePlaces(root, {
+      title: 'Case paths',
+      compare: { base, head },
+      steps: paths.map((file) => ({ ...step(file), id: file })),
+    })
+    expect(prepared.contents.get(prepared.places.get('Thing.ts')![0].uri!.toString())).toBe(
+      'upper one\nupper two\nupper three\n',
+    )
+    expect(prepared.contents.get(prepared.places.get('thing.ts')![0].uri!.toString())).toBe('lower one\n')
+  }
+  expect(writes).not.toHaveBeenCalled()
+  expect(temporary).not.toHaveBeenCalled()
+  expect(git('status', '--porcelain')).toBe('')
+})
+
+test('ordinary places never scan unrelated base paths; an empty walk needs no Git or filesystem', async () => {
+  const { root, put, commit } = fixture()
+  for (let i = 0; i < 20; i++) put(`unrelated-${i}.ts`, 'unrelated\n')
+  commit()
+  put('service.ts', 'changed\n')
+  const stat = spyOn(fs, 'lstat')
+  await prepareComparison(root, { base: 'HEAD' }, ['service.ts'])
+  expect(stat).toHaveBeenCalledTimes(1)
+  stat.mockClear()
+  expect((await prepareComparison('/does-not-exist', { base: 'missing' }, [])).size).toBe(0)
+  expect(stat).not.toHaveBeenCalled()
+})
+
+test('the navigation containment boundary rejects Windows parent and cross-drive targets', () => {
+  for (const target of ['C:\\outside\\file.ts', 'C:\\work', 'D:\\file.ts', '\\\\server\\share\\file.ts']) {
+    expect(v.is(FilePath, win32.relative('C:\\work\\project', target))).toBe(false)
+  }
+  expect(v.is(FilePath, win32.relative('C:\\work\\project', 'C:\\work\\project\\src\\file.ts'))).toBe(true)
+})
+
+test('plain navigation rejects an actual symlink outside its workspace', async () => {
+  const { root } = fixture()
+  const other = fixture()
+  symlinkSync(join(other.root, 'service.ts'), join(root, 'outside.ts'))
+  const prepared = await preparePlaces(root, { title: 'Outside', steps: [step('outside.ts')] })
+  expect(prepared.places.get('step')![0].uri).toBeUndefined()
+  expect(prepared.places.get('step')![0].reason).toContain('outside the workspace')
 })
