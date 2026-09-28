@@ -2,7 +2,10 @@ import * as vscode from 'vscode'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import * as v from 'valibot'
-import { wholeLines } from './lines.ts'
+import { locate } from './locate.ts'
+import { revisionText } from './git.ts'
+import { setCheck } from './walk-check.ts'
+import { documentRange, preparePlaces, revisionScheme, type ResolvedPlace } from './walk-places.ts'
 import { errorMessage } from './errors.ts'
 import {
   emptyReview,
@@ -12,12 +15,10 @@ import {
   removeReview,
   reviewPath,
   saveReview,
-  setApproval,
-  setResponse,
+  setNote,
   type Review,
 } from './review.ts'
 import { normalizeProgress, Progress, Walk } from './walk-data.ts'
-import { diffSides } from './walk-diff.ts'
 import { FromPage, type ToPage } from './walk-messages.ts'
 import { page, renderStep } from './walk-page.ts'
 
@@ -32,7 +33,6 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
   let review = emptyReview('')
   // Set while review.json can't be read; the review is then left alone rather than overwritten.
   let reviewProblem: string | undefined
-  // The focused step's file, tracked even while its quote isn't found so an edit that fixes it re-highlights.
   let highlightedFile: vscode.Uri | undefined
   let highlightedRange: vscode.Range | undefined
   let view: vscode.WebviewView | undefined
@@ -40,6 +40,9 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
   // Each bumped on a new request, so an older one still awaiting a file gives way.
   let highlightRequest = 0
   let loadRequest = 0
+  let places = new Map<string, ResolvedPlace[]>()
+  let contents = new Map<string, string>()
+  let pendingReveal: string | undefined
 
   try {
     review = loadReview(folder.uri.fsPath)
@@ -80,13 +83,19 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
     void vscode.commands.executeCommand('setContext', 'tandem.walkLoaded', !!walk)
     void vscode.commands.executeCommand('setContext', 'tandem.walkActive', count > 0)
     void vscode.commands.executeCommand('setContext', 'tandem.walkFocused', !!focused)
-    void vscode.commands.executeCommand('setContext', 'tandem.walkProposalFocused', !!focused?.proposal)
 
     const state: ToPage = {
       focusedStep: focused?.id ?? null,
       opened: progress.opened,
-      approved: review.steps.filter((entry) => entry.approved).map((entry) => entry.id),
-      responses: review.steps.map((entry) => ({ id: entry.id, text: entry.response ?? '' })),
+      notes: review.notes,
+      places: [...places].map(([id, items]) => ({
+        id,
+        items: items.map((place) => ({
+          ready: place.uri !== undefined,
+          reason: place.reason,
+          comparison: place.comparison,
+        })),
+      })),
       scroll,
     }
 
@@ -95,44 +104,45 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
     if (view) view.description = focused ? `${stepIndex(focused.id) + 1} of ${count}` : undefined
   }
 
-  // Highlights the focused step's code without showing it. Returns what it found, unless a newer request took over.
   async function refreshStepHighlight() {
     const request = ++highlightRequest
     const step = focusedStep()
-    highlightedFile = step?.file === undefined ? undefined : vscode.Uri.joinPath(folder.uri, step.file)
+    const place = step && places.get(step.id)?.[0]
+    highlightedFile = place?.uri
     highlightedRange = undefined
     decorate()
 
-    if (!step?.file || !highlightedFile) return
+    if (!highlightedFile || !place) return
 
     try {
       const document = await vscode.workspace.openTextDocument(highlightedFile)
 
       if (request !== highlightRequest) return
-      const found = step.quote === undefined ? undefined : locate(document, step.quote)
-      highlightedRange = found?.range
+      highlightedRange = documentRange(document, place.range)
       decorate()
 
-      return { request, document, found, file: step.file }
+      return { request, document, place, range: highlightedRange }
     } catch (error) {
       if (request === highlightRequest) vscode.window.showWarningMessage(`Can't open this step: ${errorMessage(error)}`)
     }
   }
 
   async function revealFocusedStep() {
+    const step = focusedStep()
+    pendingReveal = step && !places.get(step.id)?.[0]?.uri ? step.id : undefined
     const located = await refreshStepHighlight()
 
     if (!located) return
-    const { request, document, found, file } = located
+    const { request, document, place, range } = located
 
-    if (found && !found.range) explain(found.count, file)
+    if (place.reason) vscode.window.setStatusBarMessage(place.reason, 4000)
 
     try {
       const editor = await vscode.window.showTextDocument(document, { preserveFocus: true })
 
-      if (request !== highlightRequest || !found?.range) return
-      editor.selection = new vscode.Selection(found.range.start, found.range.start)
-      editor.revealRange(found.range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+      if (request !== highlightRequest || !range) return
+      editor.selection = new vscode.Selection(range.start, range.start)
+      editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
     } catch (error) {
       vscode.window.showWarningMessage(`Can't show this step: ${errorMessage(error)}`)
     }
@@ -141,10 +151,13 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
   async function openCode(file: string, quote: string | undefined) {
     try {
       const document = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, file))
-      const found = quote === undefined ? undefined : locate(document, quote)
+      const found = quote === undefined ? undefined : locate(document.getText(), quote)
 
       if (found && !found.range) explain(found.count, file)
-      await vscode.window.showTextDocument(document, { preserveFocus: true, selection: found?.range })
+      await vscode.window.showTextDocument(document, {
+        preserveFocus: true,
+        selection: documentRange(document, found?.range),
+      })
     } catch (error) {
       vscode.window.showWarningMessage(`Can't open ${file}: ${errorMessage(error)}`)
     }
@@ -180,30 +193,63 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
     moveTo({ ...progress, focused, opened: progress.opened.filter((opened) => opened !== id) }, 'preserve')
   }
 
-  // A proposal's diff opens in VS Code's diff editor as two read-only documents built from it; no file is touched.
-  const diffScheme = 'tandem-diff'
-  const diffChanged = new vscode.EventEmitter<vscode.Uri>()
-  const openedDiffs = new Set<string>()
+  function revisionContent(uri: vscode.Uri) {
+    const prepared = contents.get(uri.toString())
 
-  function diffContent(uri: vscode.Uri) {
+    if (prepared !== undefined) return prepared
     const query = new URLSearchParams(uri.query)
-    const diff = walk?.steps[stepIndex(query.get('id') ?? '')]?.diff
 
-    return diff === undefined ? '' : diffSides(diff)[query.get('side') === 'before' ? 'before' : 'after']
+    if (query.get('empty') === 'true') return ''
+    const repo = query.get('repo')
+    const revision = query.get('revision')
+    const file = query.get('file')
+
+    if (!repo || !revision || !/^[a-f0-9]{40,64}$/.test(revision) || !file) throw new Error('Invalid revision document')
+
+    return revisionText(repo, revision, file)
   }
 
-  function openDiff(id: string) {
-    const step = walk?.steps[stepIndex(id)]
+  async function openPlace(id: string, index: number) {
+    const place = places.get(id)?.[index]
 
-    if (!step?.diff) return
-    const path = `/${step.file ?? 'proposal'}`
+    if (!place?.uri) return
 
-    const side = (name: string) =>
-      vscode.Uri.from({ scheme: diffScheme, path, query: new URLSearchParams({ id, side: name }).toString() })
+    try {
+      const document = await vscode.workspace.openTextDocument(place.uri)
 
-    const [before, after] = [side('before'), side('after')]
-    openedDiffs.add(before.toString()).add(after.toString())
-    void vscode.commands.executeCommand('vscode.diff', before, after, `Proposal: ${step.title}`, { preview: true })
+      if (place.reason) vscode.window.setStatusBarMessage(place.reason, 4000)
+      await vscode.window.showTextDocument(document, {
+        preserveFocus: true,
+        selection: documentRange(document, place.range),
+      })
+    } catch (error) {
+      vscode.window.showWarningMessage(`Can't open place: ${errorMessage(error)}`)
+    }
+  }
+
+  async function openDiff(id: string, index: number) {
+    const place = places.get(id)?.[index]
+    const source = walk?.steps[stepIndex(id)]?.places[index]
+
+    if (!source || !place?.before || !place.after) return
+
+    try {
+      const document = await vscode.workspace.openTextDocument(place.after)
+      await vscode.commands.executeCommand('vscode.diff', place.before, place.after, source.file, {
+        preview: true,
+        preserveFocus: true,
+        selection: documentRange(document, place.reveal),
+      })
+
+      for (const editor of vscode.window.visibleTextEditors) {
+        if (editor.document.uri.toString() !== place.before.toString()) continue
+        const range = documentRange(editor.document, place.beforeRange)
+
+        if (range) editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+      }
+    } catch (error) {
+      vscode.window.showWarningMessage(`Can't open comparison: ${errorMessage(error)}`)
+    }
   }
 
   // Unlike progress, the review is a record the agent reads: it changes only once it's on disk.
@@ -228,25 +274,15 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
     return true
   }
 
-  function approve(id: string, approved: boolean) {
-    const step = walk?.steps[stepIndex(id)]
+  function check(id: string, ok: boolean) {
+    const next = walk && setCheck(review, walk, id, ok)
 
-    if (step?.proposal) commitReview(setApproval(review, step, approved))
-  }
-
-  function respond(id: string, text: string) {
-    if (stepIndex(id) !== -1) commitReview(setResponse(review, id, text))
-  }
-
-  function toggleApproval() {
-    const step = focusedStep()
-
-    if (step) approve(step.id, !review.steps.some((entry) => entry.id === step.id && entry.approved))
+    if (next) commitReview(next)
   }
 
   // Stamps the review as handed over and returns it as text, or nothing if it couldn't be saved.
   function submit() {
-    if (!walk || !commitReview({ ...review, title: walk.title, submittedAt: new Date().toISOString() })) return
+    if (!walk || !commitReview({ ...review, title: walk.title, submitted: new Date().toISOString() })) return
 
     return formatReview(review, walk)
   }
@@ -255,6 +291,14 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
     walk = next
     sections = html
     problem = undefined
+    contents = new Map()
+    pendingReveal = undefined
+    places = new Map(
+      next?.steps.map((step) => [
+        step.id,
+        step.places.map(() => ({ comparison: next.compare ? { status: 'pending' as const } : undefined })),
+      ]),
+    )
 
     // Progress and the review outlive a missing file, so a walk rewritten by delete-and-create keeps both.
     if (walk) {
@@ -268,7 +312,6 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
       }
     }
 
-    for (const uri of openedDiffs) diffChanged.fire(vscode.Uri.parse(uri))
     renderWalkDocument()
     moveTo(progress, 'reveal')
   }
@@ -305,7 +348,9 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
 
     try {
       next = existsSync(path) ? v.parse(Walk, JSON.parse(readFileSync(path, 'utf8'))) : undefined
-      html = await Promise.all(next?.steps.map(renderStep) ?? [])
+      html = await Promise.all(
+        next?.steps.map((step, index) => renderStep(step, index, next?.check, next?.compare !== undefined)) ?? [],
+      )
     } catch (error) {
       if (request !== loadRequest) return
       // Keep showing the last good walk: the agent may be partway through rewriting the file.
@@ -316,11 +361,25 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
       return
     }
 
-    if (request === loadRequest) showWalk(next, html)
+    if (request !== loadRequest) return
+    showWalk(next, html)
+
+    if (!next) return
+    const prepared = await preparePlaces(folder.uri.fsPath, next)
+
+    if (walk !== next) return
+    places = prepared.places
+    contents = prepared.contents
+    publishWalkState('none')
+    void (pendingReveal === focusedStep()?.id ? revealFocusedStep() : refreshStepHighlight())
   }
 
   function receive({ documentId: from, action }: FromPage) {
     if (from !== documentId) return
+
+    if ('id' in action && stepIndex(action.id) === -1) return
+
+    if ('place' in action && !walk?.steps[stepIndex(action.id)]?.places[action.place]) return
 
     switch (action.type) {
       case 'focusStep':
@@ -329,12 +388,14 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
         return collapseStep(action.id)
       case 'openCode':
         return void openCode(action.file, action.quote)
+      case 'openPlace':
+        return void openPlace(action.id, action.place)
       case 'openDiff':
-        return openDiff(action.id)
-      case 'approve':
-        return approve(action.id, action.approved)
-      case 'respond':
-        return respond(action.id, action.text)
+        return void openDiff(action.id, action.place)
+      case 'setCheck':
+        return check(action.id, action.ok)
+      case 'setText':
+        return void commitReview(setNote(review, action.id, { text: action.text }))
       case 'ready':
         return publishWalkState('reveal')
     }
@@ -345,10 +406,8 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
   context.subscriptions.push(
     highlight,
     watcher,
-    diffChanged,
-    vscode.workspace.registerTextDocumentContentProvider(diffScheme, {
-      onDidChange: diffChanged.event,
-      provideTextDocumentContent: diffContent,
+    vscode.workspace.registerTextDocumentContentProvider(revisionScheme, {
+      provideTextDocumentContent: revisionContent,
     }),
     watcher.onDidCreate(load),
     watcher.onDidChange(load),
@@ -375,37 +434,16 @@ export function activateWalk(context: vscode.ExtensionContext, folder: vscode.Wo
 
     vscode.window.onDidChangeVisibleTextEditors(decorate),
 
-    vscode.workspace.onDidChangeTextDocument(({ document }) => {
-      if (highlightedFile?.toString() === document.uri.toString()) void refreshStepHighlight()
-    }),
-
     vscode.commands.registerCommand('tandem.walkNext', () => focusStep(stepIndex(progress.step) + 1)),
     vscode.commands.registerCommand('tandem.walkPrevious', () => focusStep(stepIndex(progress.step) - 1)),
     vscode.commands.registerCommand('tandem.walkCurrent', () => focusStep(stepIndex(progress.step))),
     vscode.commands.registerCommand('tandem.walkUnfocus', unfocus),
-    vscode.commands.registerCommand('tandem.walkApprove', toggleApproval),
     vscode.commands.registerCommand('tandem.walkClear', clear),
   )
 
   void load()
 
   return { submit }
-}
-
-// `range` is set only when the quote occurs exactly once.
-function locate(document: vscode.TextDocument, quote: string) {
-  const text = document.getText()
-  const first = text.indexOf(quote)
-  let count = 0
-
-  for (let at = first; quote && at !== -1; at = text.indexOf(quote, at + 1)) count++
-
-  const range =
-    count === 1
-      ? wholeLines(document, new vscode.Range(document.positionAt(first), document.positionAt(first + quote.length)))
-      : undefined
-
-  return { range, count }
 }
 
 function explain(count: number, file: string) {

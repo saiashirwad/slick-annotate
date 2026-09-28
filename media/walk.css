@@ -82,9 +82,8 @@ h2 {
   color: var(--vscode-descriptionForeground);
 }
 
-/* With no file or tag, the line only has room for the response marker, which shows only on closed steps. */
-section.open .meta:not(:has(.file, .proposal)),
-section:not(.responded) .meta:not(:has(.file, .proposal)) {
+section.open .meta,
+section:not(.checked):not(.noted) .meta {
   display: none;
 }
 
@@ -146,128 +145,43 @@ section.open .collapse:hover {
   background: var(--vscode-toolbar-hoverBackground);
 }
 
-.file {
-  min-width: 0;
-  padding: 0;
-  border: none;
-  color: inherit;
-  background: none;
-  font-family: var(--vscode-editor-font-family);
-  font-size: inherit;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-section.open .file {
-  cursor: pointer;
-}
-
-section.open .file:hover {
-  color: var(--vscode-textLink-foreground);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.proposal {
-  flex: none;
-  padding: 0 6px;
-  border-radius: 3px;
-  font-size: 11px;
-  line-height: 16px;
-  background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
-}
-
-section.approved .proposal {
-  color: var(--vscode-testing-iconPassed);
-  background: color-mix(in srgb, var(--vscode-testing-iconPassed) 14%, transparent);
-}
-
-section.approved .proposal::before {
-  content: '✓ ';
-}
-
-.response-mark {
+.note-mark,
+.check-mark {
   display: none;
   flex: none;
 }
 
-.response-mark::before {
-  content: '✎';
-}
-
-section.responded:not(.open) .response-mark {
+section.noted:not(.open) .note-mark,
+section.checked:not(.open) .check-mark {
   display: inline;
 }
 
-.refs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 14px;
+.places {
   margin: 0 0 12px;
   font-size: 13px;
 }
 
-.refs a {
-  text-decoration: none;
+.place {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  overflow-wrap: anywhere;
 }
 
-.refs a:hover {
-  text-decoration: underline;
-}
-
-.ref::before {
-  content: '↗ ';
+.comparison,
+.comparison-help,
+.place-status {
+  font-size: 12px;
   color: var(--vscode-descriptionForeground);
 }
 
-/* A proposal's diff, styled after VS Code's inline diff: tinted lines in the editor's colours, the text left plain,
-   and long lines wrapped under themselves rather than scrolled. */
-
-.diff {
-  margin: 0 0 6px;
-  padding: 4px 0;
-  border-radius: 4px;
-  font-family: var(--vscode-editor-font-family);
-  font-size: 12.5px;
-  line-height: 1.55;
-  background: var(--vscode-textCodeBlock-background);
+.place-status:empty {
+  display: none;
 }
 
-.diff > div {
-  display: grid;
-  grid-template-columns: 20px 1fr;
-  padding-right: 10px;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-}
-
-.diff > div > :last-child {
-  padding-left: calc(var(--indent, 0) * 1ch);
-}
-
-.diff .added {
-  background: var(--vscode-diffEditor-insertedLineBackground, var(--vscode-diffEditor-insertedTextBackground));
-}
-
-.diff .removed {
-  background: var(--vscode-diffEditor-removedLineBackground, var(--vscode-diffEditor-removedTextBackground));
-}
-
-.diff .hunk {
-  color: var(--vscode-descriptionForeground);
-}
-
-.sign {
-  text-align: center;
-  color: var(--vscode-descriptionForeground);
-  user-select: none;
-}
-
+.place-link,
 .open-diff {
-  display: block;
-  margin: 0 0 12px;
   padding: 0;
   border: none;
   font: inherit;
@@ -277,8 +191,14 @@ section.responded:not(.open) .response-mark {
   cursor: pointer;
 }
 
+.place-link:hover,
 .open-diff:hover {
   text-decoration: underline;
+}
+
+.place-link:disabled {
+  color: var(--vscode-disabledForeground);
+  cursor: default;
 }
 
 .more {
@@ -309,7 +229,7 @@ section.expanded .more {
   margin-top: 12px;
 }
 
-.response {
+.note {
   box-sizing: border-box;
   width: 100%;
   min-height: 28px;
@@ -325,22 +245,22 @@ section.expanded .more {
   field-sizing: content;
 }
 
-.response:focus,
-.response:not(:placeholder-shown) {
+.note:focus,
+.note:not(:placeholder-shown) {
   min-height: 64px;
 }
 
-.response:focus {
+.note:focus {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
 }
 
-.response::placeholder {
+.note::placeholder {
   color: var(--vscode-input-placeholderForeground);
 }
 
 /* Drawn like VS Code's own checkboxes, which a native input can't be styled into. */
-.approve {
+.check {
   display: inline-flex;
   gap: 8px;
   align-items: center;
@@ -350,7 +270,7 @@ section.expanded .more {
   user-select: none;
 }
 
-.approve input {
+.check input {
   display: grid;
   place-content: center;
   width: 18px;
@@ -363,7 +283,7 @@ section.expanded .more {
   cursor: pointer;
 }
 
-.approve input:checked::after {
+.check input:checked::after {
   content: '';
   width: 4px;
   height: 9px;
@@ -373,7 +293,7 @@ section.expanded .more {
   transform: rotate(45deg);
 }
 
-.approve input:focus-visible {
+.check input:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: 1px;
 }

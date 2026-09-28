@@ -29,25 +29,17 @@ A guided walk through part of the codebase, written by an agent to explain somet
 _Avoid_: Tour, plan, walkthrough, guide, lesson
 
 **Step**:
-One stop on a walk: at most one piece of code the agent quotes, plus what it says about it. Steps are not annotations; annotations are only ever yours.
+One question or decision on a walk: what the agent says, together with the ordered places in code that explain it. Steps are not annotations; annotations are only ever yours.
 _Avoid_: Stop, agent annotation, agent comment
 
-**Proposal**:
-A step in which the agent says what it intends to change and asks for your approval.
-_Avoid_: Plan step, suggestion, change request
+**Place**:
+A location in code that a step points to, optionally quoting a particular passage. A step may have several places or none; its first place is where focusing it takes you.
+_Avoid_: Ref, primary file, citation
 
-**Ref**:
-Another place in the code a step points to, besides its own, worth seeing alongside it.
-_Avoid_: Citation, related location, link
-
-**Approval**:
-Your agreement to a proposal as it currently stands. It carries no meaning of its own beyond that; what a missing approval means is up to your response and the agent.
-_Avoid_: Verdict, sign-off, accept
-
-**Response**:
-What you write back to the agent on one step of a walk, proposal or not.
-_Avoid_: Note, reply, comment, annotation
+**Note**:
+Your input on one step: text and, when the walk asks for it, a labeled check. A check means what its label and your text say, not a universal approval or rejection.
+_Avoid_: Response, verdict, annotation
 
 **Review**:
-Every approval and response you've given on the current walk. It belongs to the walk, not to the session.
+All your notes on the current walk. It belongs to the walk, not to the session.
 _Avoid_: Feedback, verdicts, session

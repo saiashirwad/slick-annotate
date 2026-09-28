@@ -135,13 +135,6 @@
         "enablement": "tandem.walkFocused"
       },
       {
-        "command": "tandem.walkApprove",
-        "title": "Toggle Approval",
-        "category": "Tandem",
-        "icon": "$(check)",
-        "enablement": "tandem.walkProposalFocused"
-      },
-      {
         "command": "tandem.walkSubmit",
         "title": "Submit Review",
         "category": "Tandem",
@@ -170,11 +163,6 @@
         "command": "tandem.walkPrevious",
         "key": "alt+[",
         "when": "tandem.walkActive"
-      },
-      {
-        "command": "tandem.walkApprove",
-        "key": "alt+enter",
-        "when": "tandem.walkProposalFocused && !findInputFocussed && !notebookEditorFocused && !terminalFocus"
       }
     ],
     "menus": {

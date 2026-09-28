@@ -42,10 +42,20 @@ document.addEventListener('click', (event) => {
     return
   }
 
-  if (event.target.closest('.open-diff') && section) return send({ type: 'openDiff', id: idOf(section) })
+  const row = event.target.closest('.place')
+
+  if (row instanceof HTMLElement && section) {
+    const place = Number(row.dataset.place)
+
+    if (event.target.closest('.open-diff')) return send({ type: 'openDiff', id: idOf(section), place })
+
+    if (event.target.closest('.place-link')) return send({ type: 'openPlace', id: idOf(section), place })
+
+    return
+  }
 
   // The checkbox reports itself through 'change'; clicking it shouldn't also move the editor.
-  if (event.target.closest('.approve')) return
+  if (event.target.closest('.review')) return
 
   const anchor = event.target.closest('a')
   const href = anchor?.getAttribute('data-href') ?? anchor?.getAttribute('href')
@@ -62,8 +72,6 @@ document.addEventListener('click', (event) => {
   if (!section || anchor || String(getSelection())) return
   const id = idOf(section)
 
-  if (event.target.closest('.file') && section.classList.contains('open')) return send({ type: 'focusStep', id })
-
   if (event.target.closest('.collapse') && section.classList.contains('open')) return send({ type: 'collapseStep', id })
 
   // Clicks inside the focused step don't focus it again, so reading never pulls the editor back.
@@ -73,37 +81,62 @@ document.addEventListener('click', (event) => {
 document.addEventListener('change', ({ target }) => {
   const section = target instanceof HTMLInputElement && target.closest('section')
 
-  if (section) send({ type: 'approve', id: idOf(section), approved: target.checked })
+  if (section) send({ type: 'setCheck', id: idOf(section), ok: target.checked })
 })
 
 document.addEventListener('input', ({ target }) => {
   if (!(target instanceof HTMLTextAreaElement)) return
   const section = target.closest('section')
 
-  if (section) send({ type: 'respond', id: idOf(section), text: target.value })
+  if (section) send({ type: 'setText', id: idOf(section), text: target.value })
 })
 
 window.addEventListener('message', (/** @type {MessageEvent<ToPage>} */ { data }) => {
   const target = sections.find((section) => idOf(section) === data.focusedStep)
   const before = target?.getBoundingClientRect().top ?? 0
   const opened = new Set(data.opened)
-  const approved = new Set(data.approved)
-  const responses = new Map(data.responses.map(({ id, text }) => [id, text]))
+  const places = new Map(data.places.map(({ id, items }) => [id, items]))
 
   for (const section of sections) {
     const id = idOf(section)
-    const response = section.querySelector('textarea')
-    const approve = section.querySelector('.approve input')
-    const text = responses.get(id) ?? ''
+    const input = section.querySelector('textarea')
+    const checkbox = section.querySelector('.check input')
+    const note = Object.hasOwn(data.notes, id) ? data.notes[id] : { ok: false, text: '' }
+    const { text, ok } = note
     section.classList.toggle('current', section === target)
     section.classList.toggle('open', opened.has(id))
-    section.classList.toggle('approved', approved.has(id))
-    section.classList.toggle('responded', text.trim() !== '')
+    section.classList.toggle('checked', ok)
+    section.classList.toggle('noted', text.trim() !== '')
+    section.querySelector('.body')?.toggleAttribute('inert', !opened.has(id))
 
     // What you're typing is newer than what the extension last saved.
-    if (response && response !== document.activeElement) response.value = text
+    if (input && input !== document.activeElement) input.value = text
 
-    if (approve instanceof HTMLInputElement) approve.checked = approved.has(id)
+    if (checkbox instanceof HTMLInputElement) checkbox.checked = ok
+
+    for (const [index, row] of [...section.querySelectorAll('.place')].entries()) {
+      const state = places.get(id)?.[index]
+      const link = row.querySelector('.place-link')
+      const status = row.querySelector('.place-status')
+      const stats = row.querySelector('.comparison')
+      const diff = row.querySelector('.open-diff')
+
+      if (link instanceof HTMLButtonElement) link.disabled = !state?.ready
+
+      if (status) status.textContent = state?.reason ?? ''
+      const comparison = state?.comparison
+
+      if (stats)
+        stats.textContent =
+          !comparison || comparison.status === 'pending'
+            ? 'Preparing comparison…'
+            : comparison.status === 'available'
+              ? `+${comparison.added}/−${comparison.removed}`
+              : `Comparison unavailable: ${comparison.reason}`
+
+      if (diff instanceof HTMLButtonElement)
+        diff.hidden = !comparison || comparison.status === 'pending' || !comparison.openable
+    }
   }
 
   if (!target || data.scroll === 'none') return

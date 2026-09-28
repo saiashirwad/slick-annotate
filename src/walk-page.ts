@@ -1,6 +1,5 @@
 import * as vscode from 'vscode'
-import { diffLines } from './walk-diff.ts'
-import type { Ref, Step } from './walk-data.ts'
+import type { Step } from './walk-data.ts'
 
 const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
 
@@ -13,55 +12,28 @@ async function renderMarkdown(text: string) {
   }
 }
 
-export async function renderStep(step: Step, index: number) {
-  const file = step.file ? `<button class="file">${escape(step.file)}</button>` : ''
-  const tag = step.proposal ? '<span class="proposal">Proposal</span>' : ''
-  const refs = step.refs?.length ? `<div class="refs">${step.refs.map(link).join('')}</div>` : ''
+export async function renderStep(step: Step, index: number, check?: string, compare = false) {
+  const places = step.places
+    .map(
+      (place, index) =>
+        `<div class="place" data-place="${index}"><button class="place-link" title="${escape(place.file)}" disabled>${escape(place.label ?? place.file)}</button><span class="place-status"></span>${compare ? '<span class="comparison">Preparing comparison…</span><button class="open-diff" hidden>Open diff</button>' : ''}</div>`,
+    )
+    .join('')
 
   const [body, rendered] = await Promise.all([renderMarkdown(step.body), step.details && renderMarkdown(step.details)])
 
   const details = rendered ? `<div class="details">${rendered}</div>` : ''
   const more = details && '<button class="more">Show more</button>'
-  const approve = step.proposal ? '<label class="approve"><input type="checkbox">Approve this change</label>' : ''
+  const checkbox = check === undefined ? '' : `<label class="check"><input type="checkbox">${escape(check)}</label>`
 
   return `<section data-id="${escape(step.id)}">
   <div class="head">
     <button class="collapse" title="Collapse"></button><h2><span class="number">${index + 1}</span>${escape(step.title)}</h2>
-    <div class="meta">${file}${tag}<span class="response-mark" title="You responded"></span></div>
+    <div class="meta"><span class="check-mark" title="Checked">✓</span><span class="note-mark" title="You wrote a note">✎</span></div>
   </div>
-  <div class="body">${body}${step.diff ? renderDiff(step.diff) : ''}${refs}${details}${more}
-  <div class="review"><textarea class="response" rows="1" placeholder="Respond…" aria-label="Your response"></textarea>${approve}</div></div>
+  <div class="body">${body}<div class="places">${places}</div>${compare && places ? '<p class="comparison-help">Counts refresh when the walk reloads. Open diff shows the full files.</p>' : ''}${details}${more}
+  <div class="review"><textarea class="note" rows="1" placeholder="Write a note…" aria-label="Your note"></textarea>${checkbox}</div></div>
 </section>`
-}
-
-// Drawn here rather than by the Markdown engine, so it can look like VS Code's inline diff: tinted lines, plain text.
-// The indentation the lines share is dropped, and the rest becomes padding, so a wrapped line hangs under its own start.
-function renderDiff(diff: string) {
-  const signs = { added: '+', removed: '-', context: '', hunk: '' }
-  const lines = diffLines(diff).map((line) => ({ ...line, indent: indentOf(line.text) }))
-  const code = lines.filter((line) => line.kind !== 'hunk' && line.text.trim())
-  const shared = Math.min(...code.map((line) => line.indent))
-
-  const rows = lines.map(({ kind, text, indent }) => {
-    const pad = kind === 'hunk' || !text.trim() ? 0 : indent - shared
-
-    return `<div class="${kind}"><span class="sign">${signs[kind]}</span><span style="--indent: ${pad}">${escape(text.trimStart())}</span></div>`
-  })
-
-  return `<div class="diff">${rows.join('')}</div><button class="ref open-diff">Open diff</button>`
-}
-
-// In columns, with a tab as two.
-function indentOf(text: string) {
-  const [leading = ''] = text.match(/^[ \t]*/) ?? []
-
-  return leading.replaceAll('\t', '  ').length
-}
-
-function link({ file, quote, label }: Ref) {
-  const href = quote ? `${file}#${encodeURIComponent(quote)}` : file
-
-  return `<a class="ref" href="${escape(href)}">${escape(label ?? file)}</a>`
 }
 
 export function page(

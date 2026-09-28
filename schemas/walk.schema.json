@@ -7,12 +7,31 @@
   "required": ["title", "steps"],
   "additionalProperties": false,
   "properties": {
-    "$schema": {
-      "type": "string"
-    },
     "title": {
       "type": "string",
       "description": "Names the walk. A new title starts the reader at step 1 with an empty review."
+    },
+    "check": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Label of the optional checkbox on every step."
+    },
+    "compare": {
+      "type": "object",
+      "required": ["base"],
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Locally available ref used to find the merge-base."
+        },
+        "head": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Locally available head ref; omit to compare the working tree."
+        }
+      }
     },
     "steps": {
       "type": "array",
@@ -29,24 +48,13 @@
     },
     "step": {
       "type": "object",
-      "required": ["id", "title", "body"],
+      "required": ["id", "title", "body", "places"],
       "additionalProperties": false,
-      "dependencies": {
-        "quote": ["file"],
-        "diff": {
-          "required": ["proposal"],
-          "properties": {
-            "proposal": {
-              "const": true
-            }
-          }
-        }
-      },
       "properties": {
         "id": {
           "type": "string",
           "minLength": 1,
-          "description": "Unique within the walk. Keep it when revising a step: the reader's place, approvals and responses follow it."
+          "description": "Unique within the walk. The reader's progress and note follow this id."
         },
         "title": {
           "type": "string"
@@ -59,31 +67,16 @@
           "type": "string",
           "description": "The longer explanation, shown on \"Show more\"."
         },
-        "file": {
-          "$ref": "#/definitions/filePath"
-        },
-        "quote": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Code from the file to highlight. Must appear there exactly once."
-        },
-        "refs": {
+        "places": {
           "type": "array",
+          "description": "Ordered code locations. Focus opens the first; an empty list is valid.",
           "items": {
-            "$ref": "#/definitions/ref"
+            "$ref": "#/definitions/place"
           }
-        },
-        "proposal": {
-          "type": "boolean",
-          "description": "A change you intend to make, which the reader can approve."
-        },
-        "diff": {
-          "type": "string",
-          "description": "The intended change, in unified diff format. Proposals only."
         }
       }
     },
-    "ref": {
+    "place": {
       "type": "object",
       "required": ["file"],
       "additionalProperties": false,
@@ -94,7 +87,7 @@
         "quote": {
           "type": "string",
           "minLength": 1,
-          "description": "Code to select. Must appear in the file exactly once."
+          "description": "Literal code to highlight. With compare, may occur in either version; must not be ambiguous in either."
         },
         "label": {
           "type": "string",

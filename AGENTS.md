@@ -3,7 +3,7 @@
 Two independent features, sharing only the workspace's `.tandem/` folder:
 
 - **Annotations** (`src/annotations.ts`, `session.ts`, `copy.ts`): notes you write, as native comment threads.
-- **Walks** (`src/walk.ts`, `walk-data.ts`, `walk-messages.ts`, `walk-page.ts`, `walk-diff.ts`, `review.ts`, `media/`): a walk through the code that an agent writes, shown in a sidebar webview, and your review of it.
+- **Walks** (`src/walk.ts`, `walk-data.ts`, `walk-messages.ts`, `walk-page.ts`, `walk-places.ts`, `walk-check.ts`, `walk-compare.ts`, `review.ts`, `media/`): a walk through the code that an agent writes, shown in a sidebar webview, and your review of it.
 
 Neither imports the other; what both need gets its own module (`lines.ts`, `git.ts`, `validation.ts`, `errors.ts`). `submit.ts` is the one place they meet: it copies the review together with the session.
 

@@ -1,27 +1,29 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import * as v from 'valibot'
-import { StepId, type Step, type Walk } from './walk-data.ts'
+import { StepId, type Walk } from './walk-data.ts'
 
-// A proposal as it stood when you approved it; if the agent changes any of this, the approval no longer holds.
-const Approved = v.strictObject({
-  body: v.string(),
-  details: v.optional(v.string()),
-  quote: v.optional(v.string()),
-  diff: v.optional(v.string()),
-})
+const Note = v.strictObject({ ok: v.boolean(), text: v.string() })
 
-const StepReview = v.strictObject({ id: StepId, response: v.optional(v.string()), approved: v.optional(Approved) })
+export type Note = v.InferOutput<typeof Note>
+
+// record() discards keys such as __proto__; step ids have no such restriction.
+const Notes = v.pipe(
+  v.custom<object>((input) => input instanceof Object && Object.getPrototypeOf(input) === Object.prototype),
+  v.transform(Object.entries),
+  v.array(v.tuple([StepId, Note])),
+  v.transform((entries) => Object.fromEntries(entries)),
+)
 
 const Review = v.strictObject({
   title: v.string(),
-  submittedAt: v.optional(
+  submitted: v.optional(
     v.pipe(
       v.string(),
       v.check((value) => Number.isFinite(Date.parse(value)), 'Expected a valid timestamp'),
     ),
   ),
-  steps: v.array(StepReview),
+  notes: Notes,
 })
 
 export type Review = v.InferOutput<typeof Review>
@@ -31,7 +33,7 @@ export function reviewPath(root: string) {
 }
 
 export function emptyReview(title: string): Review {
-  return { title, steps: [] }
+  return { title, notes: {} }
 }
 
 export function loadReview(root: string): Review {
@@ -50,69 +52,52 @@ export function removeReview(root: string) {
   rmSync(reviewPath(root), { force: true })
 }
 
-function approvedAs({ body, details, quote, diff }: Step) {
-  return { body, details, quote, diff }
-}
-
-function unchanged(approved: v.InferOutput<typeof Approved>, step: Step) {
-  const now = approvedAs(step)
-
-  return (
-    approved.body === now.body &&
-    approved.details === now.details &&
-    approved.quote === now.quote &&
-    approved.diff === now.diff
-  )
-}
-
-// Keeps what still applies to the rewritten walk: responses on steps that remain, and approvals of unchanged proposals.
 export function fitReview(review: Review, walk: Walk): Review {
   if (review.title !== walk.title) return emptyReview(walk.title)
-  const steps = new Map(walk.steps.map((step) => [step.id, step]))
-  const kept: Review['steps'] = []
+  let fitted: Review = { ...review, notes: {} }
 
-  for (const entry of review.steps) {
-    const step = steps.get(entry.id)
-    const approved = step?.proposal && entry.approved && unchanged(entry.approved, step) ? entry.approved : undefined
-
-    if (step && (entry.response || approved)) kept.push({ id: entry.id, response: entry.response, approved })
+  for (const step of walk.steps) {
+    const note = noteFor(review, step.id)
+    fitted = setNote(fitted, step.id, { ...note, ok: walk.check !== undefined && note.ok })
   }
 
-  return { ...review, steps: kept }
+  return fitted
 }
 
-function withStep(review: Review, id: string, change: (entry: Review['steps'][number]) => Review['steps'][number]) {
-  const current = review.steps.find((entry) => entry.id === id) ?? { id }
-  const next = change(current)
-  const others = review.steps.filter((entry) => entry.id !== id)
-
-  return { ...review, steps: next.response || next.approved ? [...others, next] : others }
+export function noteFor(review: Review, id: string): Note {
+  return Object.hasOwn(review.notes, id) ? review.notes[id] : { ok: false, text: '' }
 }
 
-export function setResponse(review: Review, id: string, text: string) {
-  return withStep(review, id, (entry) => ({ ...entry, response: text.trim() ? text : undefined }))
-}
+export function setNote(review: Review, id: string, change: Partial<Note>): Review {
+  const next = { ...noteFor(review, id), ...change }
 
-export function setApproval(review: Review, step: Step, approved: boolean) {
-  return withStep(review, step.id, (entry) => ({ ...entry, approved: approved ? approvedAs(step) : undefined }))
+  if (!next.text.trim()) next.text = ''
+  const notes = { ...review.notes, [id]: next }
+
+  if (!next.ok && !next.text) delete notes[id]
+
+  return { ...review, notes }
 }
 
 export function formatReview(review: Review, walk: Walk) {
-  const entries = new Map(review.steps.map((entry) => [entry.id, entry]))
-  const heading = (step: Step) => `## ${walk.steps.indexOf(step) + 1}. ${step.title} (\`${step.id}\`)`
-  const blocks = [`# Review of the walk "${walk.title}"`]
+  const blocks = [`Review: ${walk.title}${review.submitted ? `  (submitted ${review.submitted})` : ''}`]
 
   for (const step of walk.steps) {
-    if (!step.proposal) continue
-    const entry = entries.get(step.id)
-    const verdict = entry?.approved ? 'Approved.' : 'Not approved.'
-    blocks.push([`${heading(step)}: proposal`, verdict, entry?.response].filter(Boolean).join('\n\n'))
-  }
+    const note = noteFor(review, step.id)
 
-  for (const step of walk.steps) {
-    const response = entries.get(step.id)?.response
-
-    if (!step.proposal && response) blocks.push(`${heading(step)}\n\n${response}`)
+    if (!note.ok && !note.text) continue
+    const prefix = walk.check === undefined ? '' : `[${note.ok ? 'x' : ' '}] ${walk.check} — `
+    blocks.push(
+      `${prefix}${step.title}${
+        note.text
+          ? '\n' +
+            note.text
+              .split('\n')
+              .map((line) => `    ${line}`)
+              .join('\n')
+          : ''
+      }`,
+    )
   }
 
   return blocks.join('\n\n')
